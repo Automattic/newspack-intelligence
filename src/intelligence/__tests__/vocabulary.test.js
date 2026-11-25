@@ -160,7 +160,6 @@ const GRAPH = {
 		},
 	],
 	pairs: [ [ 0, 1, 6 ] ],
-	truncated: true,
 	available: true,
 };
 
@@ -419,12 +418,10 @@ describe( 'the vocabulary', () => {
 		const box = installSvgBox( 913, 617 );
 		renderPage();
 		fireEvent.click( tab( 'Graph' ) );
-		await waitFor( () => {
-			expect( screen.getByText( 'Rival' ) ).toBeInTheDocument();
-			expect( screen.getByText( 'Human' ) ).toBeInTheDocument();
-		} );
-		expect( shown() ).toContain(
-			`${ ENTITY.name }\nOutfit, Rival, Lapsed member, 12 items`
+		await waitFor( () =>
+			expect( shown() ).toContain(
+				`${ ENTITY.name }\nOutfit, Rival, Lapsed member, 12 items`
+			)
 		);
 		expect( unworded() ).toEqual( [] );
 		box.restore();

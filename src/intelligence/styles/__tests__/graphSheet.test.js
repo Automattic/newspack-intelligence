@@ -110,7 +110,6 @@ const ANSWER = {
 		items: 1,
 	} ) ),
 	pairs: [ [ 0, 1, 9 ] ],
-	truncated: false,
 };
 
 /**

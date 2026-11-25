@@ -396,7 +396,7 @@ export const LENS_DEFAULTS = {
 };
 
 /** The graph page's default layout's one block, at its shipped attributes. */
-const GRAPH_DEFAULTS = { 'newspack-intelligence/graph': { shared: 5 } };
+const GRAPH_DEFAULTS = { 'newspack-intelligence/graph': { shared: 1 } };
 
 /** Each page whose default the page data's layouts hold. */
 const DEFAULTS = {

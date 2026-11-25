@@ -23,7 +23,7 @@ export default function Graph( { layout, canTune, actions, onRestored } ) {
 			<SectionHeader
 				title={ __( 'Graph', 'newspack-intelligence' ) }
 				description={ __(
-					'Everyone and everything the collected items name, joined by the items they share.',
+					'Everyone and everything the collected items are about, each joined to what its profile lists as related.',
 					'newspack-intelligence'
 				) }
 				actions={

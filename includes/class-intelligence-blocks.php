@@ -292,7 +292,7 @@ final class Intelligence_Blocks {
 					'type'    => 'integer',
 					'minimum' => 1,
 					'maximum' => 50,
-					'default' => 5,
+					'default' => 1,
 				],
 			],
 			'multiple'   => false,

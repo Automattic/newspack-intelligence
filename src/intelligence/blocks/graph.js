@@ -1,9 +1,9 @@
 /**
- * The `graph` block: every entity the items a reader may read name, on the
- * shared force graph, a line for each pair sharing at least the slider's
- * count of items and a hull for each role. Moving the slider filters what it
- * holds; Topics reads again, topic links among the rest, and draws a graph of
- * its own.
+ * The `graph` block: every entity the items a reader may read are about, on
+ * the shared force graph, and a line for each one and what its Related list
+ * holds, sharing at least the slider's count of items. The slider filters
+ * what it holds, and so does a checkbox for each type, which lays the graph
+ * out afresh.
  *
  * A press on the canvas selects an entity and lights what it reaches, and a
  * double press or Enter opens its profile. The list beside it, each entity a
@@ -12,9 +12,9 @@
  */
 
 import {
+	CheckboxControl,
 	RangeControl,
 	SearchControl,
-	ToggleControl,
 } from '@wordpress/components';
 import {
 	memo,
@@ -24,20 +24,27 @@ import {
 	useMemo,
 	useState,
 } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
-import { formatCommandArgs } from '@newspack-nodes/runtime';
+import { __ } from '@wordpress/i18n';
 import { ForceGraph } from '@newspack-nodes/shared/forceGraph';
 import { AnswerBody } from '../components/Answer';
 import CappedList from '../components/CappedList';
 import { EntityChip } from '../components/Cite';
-import { labelOf, lightGraph, toEntityGraph } from '../components/entityGraph';
-import { pageFormat } from '../components/format';
+import {
+	labelOf,
+	lightGraph,
+	ofTypes,
+	toEntityGraph,
+} from '../components/entityGraph';
+import { words } from '../components/words';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { useIntelActions } from '../layout/PageContext';
 
 /** The fewest and the most items the slider asks a pair to share. */
 const LEAST_SHARED = 1;
 const MOST_SHARED = 50;
+
+/** The types left out until their checkbox is checked. */
+const UNCHECKED = [ 'product', 'topic' ];
 
 /** The entities listed before the rest are asked for. */
 const LISTED = 30;
@@ -73,10 +80,38 @@ function SharedControl( { value, onChange } ) {
 }
 
 /**
+ * A checkbox for each type an entity may be.
+ *
+ * @param {Object}                    props
+ * @param {string[]}                  props.value    The types checked.
+ * @param {(types: string[]) => void} props.onChange Takes another set.
+ * @return {import('react').ReactElement[]} The checkboxes.
+ */
+function TypesControl( { value, onChange } ) {
+	const typeWords = words( 'typeWords' );
+	const types = Object.keys( typeWords );
+	return types.map( ( type ) => (
+		<CheckboxControl
+			key={ type }
+			__nextHasNoMarginBottom
+			label={ typeWords[ type ] }
+			checked={ value.includes( type ) }
+			onChange={ ( on ) =>
+				onChange(
+					types.filter( ( one ) =>
+						one === type ? on : value.includes( one )
+					)
+				)
+			}
+		/>
+	) );
+}
+
+/**
  * The canvas.
  *
  * @param {Object}                 props
- * @param {GraphAnswer}            props.answer    What `graph` answered.
+ * @param {GraphAnswer}            props.answer    The part of the answer it draws.
  * @param {number}                 props.minShared The fewest items a line stands for.
  * @param {?string}                props.selected  The selected entity's key.
  * @param {(key: ?string) => void} props.onSelect  Selects an entity, or none.
@@ -116,7 +151,6 @@ function Canvas( { answer, minShared, selected, onSelect } ) {
 			<ForceGraph
 				nodes={ lit.nodes }
 				links={ lit.links }
-				groups={ lit.groups }
 				selectedId={ selected }
 				onSelect={ onSelect }
 				onDeselect={ () => onSelect( null ) }
@@ -193,7 +227,9 @@ const EntityList = memo( function EntityList( {
 			/>
 			{ 0 === found.length ? (
 				<p className="newspack-nodes-empty-state is-quiet">
-					{ __( 'No name here matches.', 'newspack-intelligence' ) }
+					{ wanted
+						? __( 'No name here matches.', 'newspack-intelligence' )
+						: __( 'No names to list.', 'newspack-intelligence' ) }
 				</p>
 			) : (
 				<CappedList
@@ -237,28 +273,28 @@ function View( { attributes } ) {
 	const { shared } = attributes;
 	const [ minShared, setMinShared ] = useState( shared );
 	useEffect( () => setMinShared( shared ), [ shared ] );
-	const [ topics, setTopics ] = useState( false );
+	const [ types, setTypes ] = useState( () =>
+		Object.keys( words( 'typeWords' ) ).filter(
+			( type ) => ! UNCHECKED.includes( type )
+		)
+	);
 	const [ picked, setPicked ] = useState( /** @type {?string} */ ( null ) );
 	const [ text, setText ] = useState( '' );
 	const [ all, setAll ] = useState( false );
 	const showAll = useCallback( () => setAll( true ), [] );
-	const read = useIntelRead(
-		`block:graph:${ useId() }`,
-		'graph',
-		formatCommandArgs( [], topics ? { topics: true } : {} )
+	const read = useIntelRead( `block:graph:${ useId() }`, 'graph', [] );
+	const { answer } = read;
+	const shown = useMemo(
+		() => ( answer ? ofTypes( answer, types ) : null ),
+		[ answer, types ]
 	);
-	const held = read.answer?.entities.some( ( { key } ) => key === picked );
+	const held = shown?.entities.some( ( { key } ) => key === picked );
 	const selected = held ? picked : null;
 	return (
 		<div>
 			<div className="newspack-intelligence__controls">
 				<SharedControl value={ minShared } onChange={ setMinShared } />
-				<ToggleControl
-					__nextHasNoMarginBottom
-					label={ __( 'Topics', 'newspack-intelligence' ) }
-					checked={ topics }
-					onChange={ setTopics }
-				/>
+				<TypesControl value={ types } onChange={ setTypes } />
 			</div>
 			<AnswerBody
 				read={ read }
@@ -269,41 +305,25 @@ function View( { attributes } ) {
 					'newspack-intelligence'
 				) }
 			>
-				{ ( answer ) => (
-					<>
-						{ answer.truncated && (
-							<p className="newspack-nodes-status is-muted">
-								{ sprintf(
-									/* translators: %s: how many pairs of entities the answer holds. */
-									__(
-										'Only the %s pairs sharing the most are read.',
-										'newspack-intelligence'
-									),
-									pageFormat( Intl.NumberFormat ).format(
-										answer.pairs.length
-									)
-								) }
-							</p>
-						) }
-						<div className="newspack-intelligence__graph">
-							<Canvas
-								key={ topics ? 'topics' : 'names' }
-								answer={ answer }
-								minShared={ minShared }
-								selected={ selected }
-								onSelect={ setPicked }
-							/>
-							<EntityList
-								entities={ answer.entities }
-								selected={ selected }
-								onSelect={ setPicked }
-								text={ text }
-								onText={ setText }
-								all={ all }
-								onAll={ showAll }
-							/>
-						</div>
-					</>
+				{ () => (
+					<div className="newspack-intelligence__graph">
+						<Canvas
+							key={ types.join( ' ' ) }
+							answer={ shown }
+							minShared={ minShared }
+							selected={ selected }
+							onSelect={ setPicked }
+						/>
+						<EntityList
+							entities={ shown.entities }
+							selected={ selected }
+							onSelect={ setPicked }
+							text={ text }
+							onText={ setText }
+							all={ all }
+							onAll={ showAll }
+						/>
+					</div>
 				) }
 			</AnswerBody>
 		</div>

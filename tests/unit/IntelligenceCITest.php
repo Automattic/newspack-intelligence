@@ -185,8 +185,7 @@ final class IntelligenceCITest extends TestCase {
 		$this->assertSame( self::GAZETTE, $this->ci->dispatch( 'entity', [ 'organization:harbor-gazette' ] )['entity_key'] );
 		$this->assertSame( [ 'linear:joint-grant' ], \array_column( $this->ci->dispatch( 'timeline', [ self::GAZETTE, '--until=2026-10-02' ] )['items'], 'item_key' ) );
 		$this->assertCount( 1, $this->ci->dispatch( 'related', [ self::GAZETTE, '--limit=1' ] )['entities'] );
-		$this->assertSame( [ self::GAZETTE, 'organization:salem-ledger' ], \array_column( $this->ci->dispatch( 'graph', [] )['entities'], 'key' ) );
-		$this->assertSame( [ self::GAZETTE, 'organization:salem-ledger', 'topic:awards', 'topic:ai' ], \array_column( $this->ci->dispatch( 'graph', [ '--topics=1' ] )['entities'], 'key' ) );
+		$this->assertSame( [ self::GAZETTE, 'organization:salem-ledger', 'topic:awards', 'topic:ai' ], \array_column( $this->ci->dispatch( 'graph', [] )['entities'], 'key' ) );
 		$this->assertSame( [ 'won' ], \array_column( $this->ci->dispatch( 'claims', [ self::GAZETTE, '--predicate=won' ] )['claims'], 'predicate' ) );
 		$this->assertSame( [ '2026-10-01' ], \array_values( \array_unique( \array_column( $this->ci->dispatch( 'trends', [ 'kind', '--bucket=month' ] )['rows'], 'bucket' ) ) ) );
 		$this->assertCount( 1, $this->ci->dispatch( 'review', [ 'links' ] )['links'] );

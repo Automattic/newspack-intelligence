@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Graph tab joins each entity to what its Related list holds**, in place of every pair sharing items, so a line stands there only where a profile lists the other entity. `graph` answers those pairs, and every entity a list holds whatever its state, such as a proposed one a profile shows; it reads topic links as `related` does, takes no argument, and no longer cuts its pairs, so `topics` and `truncated` are gone.
+- **A checkbox for each entity type decides what the graph includes**, in place of the Topics toggle. Products and topics start unchecked. A click filters the answer held and lays the graph out again.
+- **"Items shared, at least" starts at 1**, not 5, on a graph block that names no count.
+- **The graph has no hulls, and its names stand apart.** Every line pulls, and one pulls less the more lines both its ends have; lines reach 600 pixels, and a joined name repels six times harder.
+
 ## [0.48.1] - 2026-11-24
 
 ### Fixed

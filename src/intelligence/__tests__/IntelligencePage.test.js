@@ -88,7 +88,6 @@ beforeEach( () => {
 			},
 		],
 		pairs: [],
-		truncated: false,
 		available: true,
 	};
 	wire.replies.watches = { watches: [], available: true };
@@ -762,7 +761,7 @@ describe( 'IntelligencePage', () => {
 		} );
 		expect(
 			screen.getByRole( 'spinbutton', { name: 'Items shared, at least' } )
-		).toHaveValue( 5 );
+		).toHaveValue( 1 );
 		fireEvent.click( chip );
 		chip.focus();
 		fireEvent.click( chip );

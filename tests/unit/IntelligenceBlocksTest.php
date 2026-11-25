@@ -558,11 +558,11 @@ final class IntelligenceBlocksTest extends TestCase {
 		];
 	}
 
-	/** The graph block stands once, on the graph's page alone, its lines standing for 5 shared items at first. */
+	/** The graph block stands once, on the graph's page alone, its lines standing for any shared item at first. */
 	public function test_the_graph_block_is_declared_on_its_page_alone(): void {
 		$graph = Composition::schemas( 'newspack-intelligence/graph' )['blocks']['newspack-intelligence/graph'];
 
-		$this->assertSame( [ 'shared' => 5 ], \array_map( static fn ( array $schema ): mixed => $schema['default'], $graph['attributes'] ) );
+		$this->assertSame( [ 'shared' => 1 ], \array_map( static fn ( array $schema ): mixed => $schema['default'], $graph['attributes'] ) );
 		$this->assertFalse( $graph['multiple'] );
 		foreach ( [ 'briefing', 'lens', 'entity' ] as $page ) {
 			$this->assertArrayNotHasKey( 'newspack-intelligence/graph', Composition::schemas( "newspack-intelligence/{$page}" )['blocks'], $page );
@@ -583,7 +583,7 @@ final class IntelligenceBlocksTest extends TestCase {
 	public function test_the_default_graph_layout_validates(): void {
 		$tree = Composition::validate( 'newspack-intelligence/graph', Composition::default_markup( 'newspack-intelligence/graph' ) );
 
-		$this->assertSame( [ [ 'newspack-intelligence/graph', [ 'shared' => 5 ] ] ], \array_map( null, \array_column( $tree, 'name' ), \array_column( $tree, 'attributes' ) ) );
+		$this->assertSame( [ [ 'newspack-intelligence/graph', [ 'shared' => 1 ] ] ], \array_map( null, \array_column( $tree, 'name' ), \array_column( $tree, 'attributes' ) ) );
 	}
 
 	/** Each end of the slider's range is admitted. */

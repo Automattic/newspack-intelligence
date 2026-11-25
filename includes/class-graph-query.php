@@ -80,9 +80,6 @@ final class Graph_Query {
 	/** Items a trend row, a related entity, a proposal or a group cites, the newest. */
 	public const CITATIONS = 5;
 
-	/** The most pairs `graph` answers, the most shared. */
-	public const GRAPH_PAIRS = 20000;
-
 	/** The proposed links `review links` answers of one item, the first by entity key. */
 	public const REVIEW_LINKS = 5;
 
@@ -1344,38 +1341,37 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The whole graph: every accepted entity a readable item names, whether
-	 * or not it shares one, with its open roles and how many readable items
-	 * name it, the most named first and then by key; and every pair of them
-	 * sharing an item, as their places among the entities and how many they
-	 * share, the most shared first and then by key, at most GRAPH_PAIRS,
-	 * `truncated` saying one was cut. An item names an entity by a link of
-	 * NAMING_ROLES, or with `topics` of ABOUT_ROLES, read by the rules
-	 * `related()` reads through; the state is `Entity_Index`'s
-	 * (`winning_states()`). One statement reads the entities and the pairs,
-	 * so a pair never names an entity it does not answer. It windows every
-	 * link the projection keeps and counts every pair an item names before
-	 * it cuts them, which SQLite holds; PHP holds the rows answered.
+	 * The whole graph: every accepted entity a readable item is about,
+	 * whether or not it shares one, and every entity one of those lists as
+	 * related, with its open roles and how many readable items are about it,
+	 * the most first and then by key; and each pair of an accepted entity and
+	 * one its `related()` list holds, RELATED_LIMIT long, as their places
+	 * among the entities and how many items they share, the most shared first
+	 * and then by key. It reads by the rules `related()` reads through; the
+	 * state is `Entity_Index`'s (`winning_states()`). One statement reads the
+	 * entities and the pairs, so a pair never names an entity it does not
+	 * answer. It windows every link the projection keeps and counts every
+	 * pair an item links, which SQLite holds; PHP holds the rows answered.
 	 *
-	 * @param array<array-key,mixed> $args The bound command args: `topics`.
-	 * @return array<string,mixed> `{ entities: [ { key, name, type, roles, items } ], pairs: [ [ a, b, shared ] ], truncated, available }`.
+	 * @return array<string,mixed> `{ entities: [ { key, name, type, roles, items } ], pairs: [ [ a, b, shared ] ], available }`.
 	 */
-	public static function graph_of( array $args ): array {
-		$links = true === $args['topics'] ? Intel_Event::ABOUT_ROLES : Intel_Event::NAMING_ROLES;
+	public static function graph_of(): array {
 		return self::answer(
 			[
-				'entities'  => [],
-				'pairs'     => [],
-				'truncated' => false,
+				'entities' => [],
+				'pairs'    => [],
 			],
-			static function ( Row_Reader $r, array $g ) use ( $links ): array {
-				[ $live, $live_binds ] = self::live( $r, '1 = 1', [], $links );
+			static function ( Row_Reader $r, array $g ): array {
+				[ $live, $live_binds ] = self::live( $r, '1 = 1', [] );
 				$rows                  = $r->rows(
-					"{$g['with']}{$live}, named AS MATERIALIZED ( SELECT DISTINCT live.item_key, live.entity_key FROM live WHERE live.entity_key IN ( SELECT s.entity_key FROM " . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'accepted' ) ),"
-					. ' pairs AS ( SELECT a.entity_key AS a, b.entity_key AS b, COUNT(*) AS n FROM named a JOIN named b ON b.item_key = a.item_key AND a.entity_key < b.entity_key GROUP BY 1, 2 ORDER BY n DESC, 1, 2 LIMIT ? )'
-					. ' SELECT 0 AS paired, entity_key AS a, NULL AS b, COUNT(*) AS n, ' . self::name_of( $r, 'named.entity_key' ) . ', ' . self::type_of( $r, 'named.entity_key' ) . ' FROM named GROUP BY entity_key'
-					. ' UNION ALL SELECT 1, a, b, n, NULL, NULL FROM pairs ORDER BY paired, n DESC, a, b',
-					[ ...$g['binds'], ...$live_binds, self::GRAPH_PAIRS + 1 ]
+					"{$g['with']}{$live}, about AS MATERIALIZED ( SELECT DISTINCT item_key, entity_key FROM live ),"
+					. ' accepted AS MATERIALIZED ( SELECT DISTINCT entity_key FROM about WHERE entity_key IN ( SELECT s.entity_key FROM ' . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'accepted' ) ),"
+					. ' shares AS ( SELECT a.entity_key AS a, b.entity_key AS b, COUNT(*) AS n FROM about a JOIN about b ON b.item_key = a.item_key AND b.entity_key <> a.entity_key WHERE a.entity_key IN ( SELECT entity_key FROM accepted ) GROUP BY 1, 2 ),'
+					. ' related AS MATERIALIZED ( SELECT DISTINCT MIN( a, b ) AS a, MAX( a, b ) AS b, n FROM ( SELECT a, b, n, ROW_NUMBER() OVER ( PARTITION BY a ORDER BY n DESC, b ) AS rn FROM shares ) WHERE rn <= ? ),'
+					. ' shown AS ( SELECT entity_key FROM accepted UNION SELECT a FROM related UNION SELECT b FROM related )'
+					. ' SELECT 0 AS paired, entity_key AS a, NULL AS b, COUNT(*) AS n, ' . self::name_of( $r, 'about.entity_key' ) . ', ' . self::type_of( $r, 'about.entity_key' ) . ' FROM about WHERE entity_key IN ( SELECT entity_key FROM shown ) GROUP BY entity_key'
+					. ' UNION ALL SELECT 1, a, b, n, NULL, NULL FROM related ORDER BY paired, n DESC, a, b',
+					[ ...$g['binds'], ...$live_binds, self::RELATED_LIMIT ]
 				);
 				$entities              = [];
 				$places                = [];
@@ -1396,9 +1392,8 @@ final class Graph_Query {
 					$entities[ $places[ $key ] ]['roles'] = \array_values( \array_intersect( $ranked, \array_keys( $roles ) ) );
 				}
 				return [
-					'entities'  => $entities,
-					'pairs'     => \array_slice( $pairs, 0, self::GRAPH_PAIRS ),
-					'truncated' => \count( $pairs ) > self::GRAPH_PAIRS,
+					'entities' => $entities,
+					'pairs'    => $pairs,
 				];
 			}
 		);

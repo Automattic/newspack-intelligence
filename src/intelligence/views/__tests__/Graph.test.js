@@ -54,7 +54,6 @@ beforeEach( () => {
 			},
 		],
 		pairs: [],
-		truncated: false,
 		available: true,
 	};
 	actions = { onOpenEntity: jest.fn() };

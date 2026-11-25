@@ -1,10 +1,9 @@
 /* eslint-env jest */
 /**
  * The `graph` block reads `graph` once and draws every entity on the shared
- * force graph: its slider filters the lines it already holds, Topics asks
- * again, a selection lights what it reaches, and the list beside the canvas
- * selects and opens what a press on it does. The canvas takes every wheel over
- * it.
+ * force graph: its slider and its types filter what it holds, a
+ * selection lights what it reaches, and the list beside the canvas selects and
+ * opens what a press on it does. The canvas takes every wheel over it.
  *
  * The force graph is the real one in a box jsdom lacks, wrapped to show what
  * it was handed, and each chip is wrapped to count what it draws.
@@ -91,7 +90,6 @@ const ANSWER = {
 		[ 0, 2, 9 ],
 		[ 1, 2, 8 ],
 	],
-	truncated: false,
 	available: true,
 };
 
@@ -129,7 +127,6 @@ beforeEach( () => {
 
 afterEach( () => {
 	box.restore();
-	document.documentElement.lang = '';
 } );
 
 /**
@@ -269,7 +266,6 @@ describe( 'what it reads', () => {
 		wire.replies.graph = {
 			entities: [],
 			pairs: [],
-			truncated: false,
 			available: false,
 		};
 		renderOnPage( block() );
@@ -285,26 +281,6 @@ describe( 'what it reads', () => {
 			await screen.findByText( 'No collected item names anyone yet.' )
 		).toBeInTheDocument();
 		expect( mockRenders ).toEqual( [] );
-	} );
-
-	it( 'says how many pairs a cut answer holds, in the page’s language', async () => {
-		document.documentElement.lang = 'de';
-		wire.replies.graph = {
-			...ANSWER,
-			pairs: Array.from( { length: 1237 }, () => [ 1, 2, 3 ] ),
-			truncated: true,
-		};
-		await open();
-		expect(
-			screen.getByText(
-				'Only the 1.237 pairs sharing the most are read.'
-			)
-		).toBeInTheDocument();
-	} );
-
-	it( 'says nothing of an answer that was not cut', async () => {
-		await open();
-		expect( screen.queryByText( /pairs sharing the most/ ) ).toBeNull();
 	} );
 } );
 
@@ -335,6 +311,121 @@ it( 'reads again once a write changes which items show', async () => {
 	await waitFor( () => expect( wire.sent( 'graph' ) ).toEqual( [ [], [] ] ) );
 } );
 
+describe( 'its types', () => {
+	const TIDES = 'topic:tides';
+	const PRESS = 'product:gull-press';
+
+	beforeEach( () => {
+		const typed = ( key, type ) => ( { ...coves( 1 )[ 0 ], key, type } );
+		wire.replies.graph = {
+			...ANSWER,
+			entities: [
+				...ANSWER.entities,
+				typed( TIDES, 'topic' ),
+				typed( PRESS, 'product' ),
+			],
+			pairs: [ ...ANSWER.pairs, [ 0, 4, 31 ], [ 0, 5, 29 ] ],
+		};
+	} );
+
+	const check = ( name ) => screen.getByRole( 'checkbox', { name } );
+	const shown = () => drawn().nodes.map( ( { id } ) => id );
+
+	it( 'are each a checkbox, in words, all on but topics and products', async () => {
+		await open();
+		expect(
+			screen
+				.getAllByRole( 'checkbox' )
+				.map( ( { checked, labels } ) => [
+					labels[ 0 ].textContent,
+					checked,
+				] )
+		).toEqual( [
+			[ 'Outfit', true ],
+			[ 'Human', true ],
+			[ 'Locale', true ],
+			[ 'Offering', false ],
+			[ 'Subject area', false ],
+			[ 'Happening', true ],
+		] );
+		expect( shown() ).toEqual( [ HARBOR, IDA, PRAIRIE, GULL ] );
+	} );
+
+	it( 'take their entities, lines and chips in and out without a second read', async () => {
+		await open( 9 );
+		fireEvent.click( check( 'Subject area' ) );
+		expect( shown() ).toEqual( [ HARBOR, IDA, PRAIRIE, GULL, TIDES ] );
+		expect( endsOf( drawn() ) ).toContainEqual( [ HARBOR, TIDES ] );
+		fireEvent.click( check( 'Human' ) );
+		expect( shown() ).toEqual( [ HARBOR, PRAIRIE, GULL, TIDES ] );
+		expect( endsOf( drawn() ) ).toEqual( [
+			[ HARBOR, PRAIRIE ],
+			[ HARBOR, TIDES ],
+		] );
+		expect( chips() ).not.toContain( 'Ida Marsh' );
+		await act( () => new Promise( ( done ) => setTimeout( done, 50 ) ) );
+		expect( wire.sent( 'graph' ) ).toEqual( [ [] ] );
+	} );
+
+	it( 'lay the graph out afresh, on a canvas of its own', async () => {
+		await open();
+		const first = canvas();
+		fireEvent.click( check( 'Offering' ) );
+		expect( canvas() ).not.toBe( first );
+		const second = canvas();
+		fireEvent.click( check( 'Offering' ) );
+		expect( canvas() ).not.toBe( second );
+	} );
+
+	it( 'leave the slider, and the selection they still hold', async () => {
+		await open();
+		slide( 23 );
+		fireEvent.click( chip( 'Ida Marsh' ) );
+		fireEvent.click( check( 'Subject area' ) );
+		expect( slider() ).toHaveValue( 23 );
+		expect( drawn().selectedId ).toBe( IDA );
+	} );
+
+	it( 'leave the search text', async () => {
+		await open();
+		fireEvent.change( search(), { target: { value: 'sig' } } );
+		fireEvent.click( check( 'Subject area' ) );
+		expect( search() ).toHaveValue( 'sig' );
+		expect( chips() ).toEqual( [ 'Prairie Signal' ] );
+	} );
+
+	it( 'leave the rest of the list once asked for', async () => {
+		wire.replies.graph = {
+			...ANSWER,
+			entities: [ ...ANSWER.entities, ...coves( 29 ) ],
+		};
+		await open();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Show 3 more' } )
+		);
+		fireEvent.click( check( 'Human' ) );
+		expect( chips() ).toHaveLength( 32 );
+	} );
+
+	it( 'leave nothing to list with none checked, and say so', async () => {
+		await open();
+		for ( const name of [ 'Outfit', 'Human', 'Locale', 'Happening' ] ) {
+			fireEvent.click( check( name ) );
+		}
+		expect( shown() ).toEqual( [] );
+		expect( screen.getByText( 'No names to list.' ) ).toBeInTheDocument();
+		expect( screen.queryByText( 'No name here matches.' ) ).toBeNull();
+	} );
+
+	it( 'drop the selection with its type', async () => {
+		await open();
+		fireEvent.click( chip( 'Ida Marsh' ) );
+		expect( drawn().selectedId ).toBe( IDA );
+		fireEvent.click( check( 'Human' ) );
+		expect( drawn().selectedId ).toBeNull();
+	} );
+} );
+
 describe( 'what it draws', () => {
 	it( 'draws every entity, and the pairs at or above its attribute', async () => {
 		await open( 9 );
@@ -344,12 +435,7 @@ describe( 'what it draws', () => {
 			[ IDA, HARBOR ],
 			[ HARBOR, PRAIRIE ],
 		] );
-		expect( drawn().groups.map( ( { label } ) => label ) ).toEqual( [
-			'Rival',
-			'Human',
-			'Lapsed member',
-			'Happening',
-		] );
+		expect( drawn().groups ).toBeUndefined();
 	} );
 
 	it( 'filters its lines by the slider without a second read', async () => {
@@ -379,122 +465,19 @@ describe( 'what it draws', () => {
 		expect( slider() ).toHaveAttribute( 'max', '50' );
 	} );
 
-	it( 'is never live and keys no layout', async () => {
+	it( 'is never live', async () => {
 		await open();
 		expect( drawn().live ).toBeUndefined();
-		expect( drawn().layoutKey ).toBeUndefined();
 	} );
 
-	it( 'hands over the same nodes, lines and hulls on a render that changes nothing', async () => {
+	it( 'hands over the same nodes and lines on a render that changes nothing', async () => {
 		const { rerender } = await open();
-		const { nodes, links, groups } = drawn();
+		const { nodes, links } = drawn();
 		const renders = mockRenders.length;
 		rerender( block() );
 		expect( mockRenders.length ).toBeGreaterThan( renders );
 		expect( drawn().nodes ).toBe( nodes );
 		expect( drawn().links ).toBe( links );
-		expect( drawn().groups ).toBe( groups );
-	} );
-} );
-
-describe( 'Topics', () => {
-	const TOPIC = 'topic:tides';
-	const WITH_TOPICS = {
-		...ANSWER,
-		entities: [
-			...ANSWER.entities.slice( 0, 3 ),
-			{
-				key: TOPIC,
-				name: 'Tides',
-				type: 'topic',
-				roles: [],
-				items: 1,
-			},
-		],
-	};
-
-	beforeEach( () => {
-		wire.replies.graph = ( args ) => ( args.length ? WITH_TOPICS : ANSWER );
-	} );
-
-	const toggle = () =>
-		fireEvent.click( screen.getByRole( 'checkbox', { name: 'Topics' } ) );
-
-	it( 'is off, and on reads again with topic links', async () => {
-		await open();
-		expect(
-			screen.getByRole( 'checkbox', { name: 'Topics' } )
-		).not.toBeChecked();
-		toggle();
-		await waitFor( () => expect( node( TOPIC ) ).not.toBeNull() );
-		expect( wire.sent( 'graph' ) ).toEqual( [ [], [ '--topics' ] ] );
-		expect( node( GULL ) ).toBeNull();
-	} );
-
-	it( 'keeps the slider, and the selection while the answer still holds it', async () => {
-		await open( 9 );
-		slide( 23 );
-		fireEvent.click( chip( 'Ida Marsh' ) );
-		toggle();
-		await waitFor( () => expect( node( TOPIC ) ).not.toBeNull() );
-		expect( slider() ).toHaveValue( 23 );
-		expect( drawn().selectedId ).toBe( IDA );
-	} );
-
-	it( 'keeps the search text', async () => {
-		await open();
-		fireEvent.change( search(), { target: { value: 'sig' } } );
-		toggle();
-		await waitFor( () => expect( node( TOPIC ) ).not.toBeNull() );
-		expect( search() ).toHaveValue( 'sig' );
-		expect( chips() ).toEqual( [ 'Prairie Signal' ] );
-	} );
-
-	it( 'keeps the rest of the list once asked for', async () => {
-		wire.replies.graph = ( args ) => ( {
-			...ANSWER,
-			entities: [ ...ANSWER.entities, ...coves( args.length ? 37 : 29 ) ],
-		} );
-		await open();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Show 3 more' } )
-		);
-		toggle();
-		await waitFor( () => expect( chips() ).toHaveLength( 41 ) );
-	} );
-
-	it( 'lays its graph out afresh, the first read and the remembered one alike', async () => {
-		await open();
-		const first = canvas();
-		toggle();
-		await waitFor( () => expect( node( TOPIC ) ).not.toBeNull() );
-		const second = canvas();
-		expect( second ).not.toBe( first );
-		toggle();
-		await waitFor( () => expect( node( GULL ) ).not.toBeNull() );
-		expect( canvas() ).not.toBe( second );
-	} );
-
-	it( 'holds the canvas’s place while its answer is owed', async () => {
-		wire.replies.graph = ( args ) =>
-			args.length ? new Promise( () => {} ) : ANSWER;
-		await open();
-		const place = canvas().closest( '.newspack-intelligence__graph' );
-		expect( place ).not.toBeNull();
-		toggle();
-		const owed = screen.getByRole( 'status', { name: 'Loading' } );
-		expect( owed ).toHaveClass( 'newspack-intelligence__graph' );
-		expect( owed.firstChild ).toHaveClass( 'newspack-nodes-skeleton' );
-	} );
-
-	it( 'selects none once the answer no longer holds the selected entity', async () => {
-		await open();
-		fireEvent.click( chip( 'Gull Summit' ) );
-		expect( drawn().selectedId ).toBe( GULL );
-		toggle();
-		await waitFor( () => expect( node( TOPIC ) ).not.toBeNull() );
-		expect( drawn().selectedId ).toBeNull();
-		expect( node( HARBOR ) ).not.toHaveClass( 'is-dimmed' );
 	} );
 } );
 

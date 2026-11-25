@@ -1,7 +1,7 @@
 /**
  * The entity graph as the shared force graph draws it: what the `graph`
- * command answered as nodes, lines and hulls, and the classes a selection
- * lights and dims them by.
+ * command answered as nodes and lines, and the classes a selection lights and
+ * dims them by.
  */
 
 import { entityName, itemsPhrase, metaLine } from './format';
@@ -9,7 +9,6 @@ import { word, words } from './words';
 
 /** @typedef {import('@newspack-nodes/shared/forceGraph/ForceGraph').GraphNode} GraphNode */
 /** @typedef {import('@newspack-nodes/shared/forceGraph/ForceGraph').GraphLink} GraphLink */
-/** @typedef {import('@newspack-nodes/shared/forceGraph/ForceGraph').GraphGroup} GraphGroup */
 
 /**
  * An entity as `graph` answers it.
@@ -19,21 +18,19 @@ import { word, words } from './words';
  * @property {?string}  name  Its name, null for none.
  * @property {string}   type  Its type.
  * @property {string[]} roles Its open roles, in the order the server ranks them.
- * @property {number}   items How many items name it.
+ * @property {number}   items How many items are about it.
  */
 
 /**
  * @typedef {Object} GraphAnswer
- * @property {GraphEntity[]}              entities  The entities, the most named first.
- * @property {[number, number, number][]} pairs     Two places in `entities` and how many items they share, the most shared first.
- * @property {boolean}                    truncated Whether pairs were left out.
+ * @property {GraphEntity[]}              entities The entities, those the most items are about first.
+ * @property {[number, number, number][]} pairs    Two places in `entities`, one related to the other, and how many items they share, the most shared first.
  */
 
 /**
  * @typedef {Object} EntityGraph
- * @property {GraphNode[]}  nodes  One for each entity.
- * @property {GraphLink[]}  links  One for each pair drawn.
- * @property {GraphGroup[]} groups One for each hull.
+ * @property {GraphNode[]} nodes One for each entity.
+ * @property {GraphLink[]} links One for each pair drawn.
  */
 
 /**
@@ -44,17 +41,6 @@ import { word, words } from './words';
  */
 export const labelOf = ( { name, key } ) =>
 	entityName( { name, entity_key: key } );
-
-/**
- * The hull an entity stands in: its first open role, else its type.
- *
- * @param {GraphEntity} entity The entity.
- * @return {GraphGroup} The hull.
- */
-const hullOf = ( { roles: [ role ], type } ) =>
-	role
-		? { id: `role:${ role }`, label: word( 'roleWords', role ) }
-		: { id: `type:${ type }`, label: word( 'typeWords', type ) };
 
 /**
  * An entity's tooltip: its label, then its type, roles and items.
@@ -72,9 +58,42 @@ const titleOf = ( entity ) => {
 };
 
 /**
+ * The part of the answer naming entities of some types, and the pairs among
+ * them.
+ *
+ * @param {GraphAnswer} answer What `graph` answered.
+ * @param {string[]}    types  The types.
+ * @return {GraphAnswer} That part, its places its own.
+ */
+export function ofTypes( { entities, pairs }, types ) {
+	const places = new Map();
+	const kept = entities.filter( ( { type }, place ) => {
+		const holds = types.includes( type );
+		if ( holds ) {
+			places.set( place, places.size );
+		}
+		return holds;
+	} );
+	return {
+		entities: kept,
+		pairs: pairs.flatMap( ( [ a, b, shared ] ) =>
+			places.has( a ) && places.has( b )
+				? [ [ places.get( a ), places.get( b ), shared ] ]
+				: []
+		),
+	};
+}
+
+/** Pixels a line pulls its ends to. */
+const DISTANCE = 600;
+
+/** What a joined entity carries, so the lines it holds do not pile names up. */
+const JOINED_CHARGE = -6000;
+
+/**
  * The answer as the force graph draws it: every entity, colored by its
  * type's place in the vocabulary, and a line for each pair sharing at least
- * `minShared` items.
+ * `minShared` items, pulling less the more lines its less joined end has.
  *
  * @param {GraphAnswer} answer            What `graph` answered.
  * @param {Object}      options
@@ -83,31 +102,30 @@ const titleOf = ( entity ) => {
  */
 export function toEntityGraph( { entities, pairs }, { minShared } ) {
 	const types = Object.keys( words( 'typeWords' ) );
-	/** @type {Map<string, GraphGroup>} */
-	const hulls = new Map();
-	const nodes = entities.map( ( entity ) => {
-		const hull = hullOf( entity );
-		hulls.set( hull.id, hull );
+	const drawn = pairs.filter( ( [ , , shared ] ) => shared >= minShared );
+	const joins = new Map();
+	for ( const place of drawn.flatMap( ( [ a, b ] ) => [ a, b ] ) ) {
+		joins.set( place, ( joins.get( place ) ?? 0 ) + 1 );
+	}
+	const nodes = entities.map( ( entity, place ) => ( {
+		id: entity.key,
+		label: labelOf( entity ),
+		className: `is-type-${ types.indexOf( entity.type ) + 1 }`,
+		title: titleOf( entity ),
+		charge: joins.has( place ) ? JOINED_CHARGE : undefined,
+	} ) );
+	const links = drawn.map( ( [ a, b, shared ] ) => {
+		const [ source, target ] = [ entities[ a ].key, entities[ b ].key ];
 		return {
-			id: entity.key,
-			label: labelOf( entity ),
-			group: hull.id,
-			className: `is-type-${ types.indexOf( entity.type ) + 1 }`,
-			title: titleOf( entity ),
+			id: `${ source } ${ target }`,
+			source,
+			target,
+			weight: shared,
+			distance: DISTANCE,
+			strength: 1 / Math.min( joins.get( a ), joins.get( b ) ),
 		};
 	} );
-	const links = pairs
-		.filter( ( [ , , shared ] ) => shared >= minShared )
-		.map( ( [ a, b, shared ] ) => {
-			const [ source, target ] = [ entities[ a ].key, entities[ b ].key ];
-			return {
-				id: `${ source } ${ target }`,
-				source,
-				target,
-				weight: shared,
-			};
-		} );
-	return { nodes, links, groups: [ ...hulls.values() ] };
+	return { nodes, links };
 }
 
 /**
@@ -139,6 +157,5 @@ export function lightGraph( graph, selected ) {
 			...link,
 			className: shade( touches( link ) ),
 		} ) ),
-		groups: graph.groups,
 	};
 }
