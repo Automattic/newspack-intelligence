@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-11-25
+
 ### Changed
 
 - **The Graph tab joins each entity to what its Related list holds**, in place of every pair sharing items, so a line stands there only where a profile lists the other entity. `graph` answers those pairs, and every entity a list holds whatever its state, such as a proposed one a profile shows; it reads topic links as `related` does, takes no argument, and no longer cuts its pairs, so `topics` and `truncated` are gone.
