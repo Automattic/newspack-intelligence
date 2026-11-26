@@ -520,6 +520,13 @@
 		> .components-range-control {
 			flex: 0 1 24rem;
 		}
+
+		// A checkbox centred on the line of the 40px fields beside it.
+		> .components-checkbox-control {
+			display: flex;
+			align-items: center;
+			min-height: 40px;
+		}
 	}
 }
 
@@ -610,6 +617,13 @@ $type-slots: 1, 2, 4, 5, 8, 7;
 		stroke: light-dark(
 			color-mix(in srgb, #{$line} 10%, transparent),
 			color-mix(in srgb, #{$line} 20%, transparent)
+		);
+	}
+
+	#{$graph}__view.is-far #{$graph}__link:not(.is-lit, .is-dimmed) {
+		stroke: light-dark(
+			color-mix(in srgb, #{$line} 18%, transparent),
+			color-mix(in srgb, #{$line} 25%, transparent)
 		);
 	}
 }

@@ -363,6 +363,22 @@ describe( 'the graph’s paint', () => {
 				expect( stroke( 'is-lit' ) ).toBe( tokenOf( slug, '--cyan' ) );
 			} );
 
+			it( 'halves a line at rest while names are hidden, and leaves a lit or dimmed one', () => {
+				const stroke = ( names, view = '' ) =>
+					paintedOn(
+						slug,
+						`<g class="${ BLOCK }__view ${ view }"><path class="${ BLOCK }__link ${ names }"></path></g>`,
+						`.${ BLOCK }__link`,
+						'stroke'
+					);
+				expect( mixOf( stroke( '', 'is-far' ) ).share ).toBe(
+					dark ? 25 : 18
+				);
+				[ 'is-lit', 'is-dimmed' ].forEach( ( names ) =>
+					expect( stroke( names, 'is-far' ) ).toBe( stroke( names ) )
+				);
+			} );
+
 			it( 'paints a chip as its badge', () => {
 				const paintOf = ( names ) =>
 					[ 'background-color', 'color' ].map( ( longhand ) =>
@@ -412,6 +428,24 @@ describe( 'the graph’s paint', () => {
 		expect( node( nodes[ 0 ].className, 'opacity' ) ).toBeUndefined();
 		expect( line( '', 'stroke' ) ).toMatch(
 			/^light-dark\(color-mix\(in srgb, var\(--ink-3, var\(--np-text-secondary\)\) 35%/
+		);
+	} );
+
+	it( 'centres each checkbox among the filters on the line of a 40px field', () => {
+		document.body.innerHTML = `
+			<div class="newspack-intelligence"><div class="newspack-intelligence__controls">
+				<div class="components-base-control components-checkbox-control"></div>
+			</div></div>`;
+		const box = document.querySelector( '.components-checkbox-control' );
+		const of = ( longhand ) => {
+			const [ one, two ] = ORDERS.map( ( sheets ) =>
+				winning( box, longhand, sheets )
+			);
+			expect( two ).toBe( one );
+			return one;
+		};
+		expect( [ 'display', 'align-items', 'min-height' ].map( of ) ).toEqual(
+			[ 'flex', 'center', '40px' ]
 		);
 	} );
 

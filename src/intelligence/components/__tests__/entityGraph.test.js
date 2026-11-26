@@ -59,14 +59,15 @@ const TYPE = Object.fromEntries(
 );
 
 /**
- * A circle's size for a share of the most items: half again the shared size,
- * since the graph's charge spreads it far wider than its circles.
+ * A circle's size for a share of the most items: three times the shared size
+ * from a least radius of 5, so the largest is five times the smallest, since
+ * the graph's charge spreads it far wider than its circles.
  *
  * @param {number} items Its items.
  * @param {number} most  The most any entity drawn holds.
  * @return {number} Its size.
  */
-const sized = ( items, most ) => 1.5 * ( 10 + 20 * Math.sqrt( items / most ) );
+const sized = ( items, most ) => 3 * ( 5 + 20 * Math.sqrt( items / most ) );
 
 beforeEach( () => {
 	window.NewspackNodesData = pageData();
@@ -96,8 +97,10 @@ describe( 'toEntityGraph', () => {
 				className: TYPE.organization,
 				title: 'Harbor Ledger\nOutfit, Rival, Lapsed member, 31 items',
 				charge: -6000,
-				size: 45,
+				size: 75,
 				detail: '31',
+				landmark: true,
+				dock: false,
 			},
 			{
 				id: 'person:ida-marsh',
@@ -107,6 +110,8 @@ describe( 'toEntityGraph', () => {
 				charge: -6000,
 				size: sized( 12, 31 ),
 				detail: '12',
+				landmark: true,
+				dock: false,
 			},
 			{
 				id: 'organization:prairie-signal',
@@ -116,6 +121,8 @@ describe( 'toEntityGraph', () => {
 				charge: -6000,
 				size: sized( 7, 31 ),
 				detail: '7',
+				landmark: true,
+				dock: false,
 			},
 			{
 				id: 'event:gull-summit',
@@ -125,8 +132,41 @@ describe( 'toEntityGraph', () => {
 				charge: undefined,
 				size: sized( 1, 31 ),
 				detail: '1',
+				landmark: true,
+				dock: true,
 			},
 		] );
+	} );
+
+	it( 'names the twelve entities the most items are about at every scale', () => {
+		const many = {
+			entities: Array.from( { length: 14 }, ( _, place ) => ( {
+				key: `topic:kea-${ place }`,
+				name: `Kea ${ place }`,
+				type: 'topic',
+				roles: [],
+				items: 14 - place,
+			} ) ),
+			pairs: [],
+		};
+		expect(
+			toEntityGraph( many, { minShared: 1 } ).nodes.map(
+				( { landmark } ) => landmark
+			)
+		).toEqual( [ ...Array( 12 ).fill( true ), false, false ] );
+	} );
+
+	it( 'docks each entity no line joins, and only those', () => {
+		expect(
+			toEntityGraph( ANSWER, { minShared: 9 } )
+				.nodes.filter( ( { dock } ) => dock )
+				.map( ( { id } ) => id )
+		).toEqual( [ 'event:gull-summit' ] );
+		expect(
+			toEntityGraph( ANSWER, { minShared: 99 } ).nodes.every(
+				( { dock } ) => dock
+			)
+		).toBe( true );
 	} );
 
 	it( 'sizes each circle by the most items an entity it draws holds', () => {
@@ -135,13 +175,13 @@ describe( 'toEntityGraph', () => {
 			toEntityGraph( part, { minShared: 9 } ).nodes.map(
 				( { size } ) => size
 			)
-		).toEqual( [ 45, sized( 7, 31 ), sized( 1, 31 ) ] );
+		).toEqual( [ 75, sized( 7, 31 ), sized( 1, 31 ) ] );
 		const small = ofTypes( ANSWER, [ 'person', 'event' ] );
 		expect(
 			toEntityGraph( small, { minShared: 9 } ).nodes.map(
 				( { size } ) => size
 			)
-		).toEqual( [ 45, sized( 1, 12 ) ] );
+		).toEqual( [ 75, sized( 1, 12 ) ] );
 	} );
 
 	it( 'writes an item count in the page’s own language', () => {
@@ -277,7 +317,7 @@ describe( 'the shared lighting', () => {
 		expect(
 			lit.nodes.map( ( { size, detail } ) => [ size, detail ] )
 		).toEqual( [
-			[ 45, '31' ],
+			[ 75, '31' ],
 			[ sized( 12, 31 ), '12' ],
 			[ sized( 7, 31 ), '7' ],
 			[ sized( 1, 31 ), '1' ],

@@ -101,7 +101,13 @@ const DISTANCE = 600;
 const JOINED_CHARGE = -6000;
 
 /** How much larger than the shared size a circle draws, against that charge. */
-const CIRCLE_SCALE = 1.5;
+const CIRCLE_SCALE = 3;
+
+/** The least radius a circle takes before its scale, a fifth of the most. */
+const LEAST_RADIUS = 5;
+
+/** How many entities, those the most items are about, are named at every scale. */
+const LANDMARKS = 12;
 
 /**
  * The answer as the force graph draws it: every entity, colored by its
@@ -133,8 +139,10 @@ export function toEntityGraph( { entities, pairs }, { minShared } ) {
 		className: `is-type-${ types.indexOf( entity.type ) + 1 }`,
 		title: titleOf( entity ),
 		charge: joins.has( place ) ? JOINED_CHARGE : undefined,
-		size: CIRCLE_SCALE * circleSize( entity.items, most ),
+		size: CIRCLE_SCALE * circleSize( entity.items, most, LEAST_RADIUS ),
 		detail: count.format( entity.items ),
+		landmark: place < LANDMARKS,
+		dock: ! joins.has( place ),
 	} ) );
 	const links = drawn.map( ( [ a, b, shared ] ) => {
 		const [ source, target ] = [ entities[ a ].key, entities[ b ].key ];
