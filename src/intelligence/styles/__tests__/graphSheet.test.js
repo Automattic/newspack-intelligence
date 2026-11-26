@@ -7,6 +7,7 @@
  */
 
 /* global NEWSPACK_NODES_SRC */
+import fs from 'fs';
 import path from 'path';
 import * as sass from 'sass';
 import scss from 'postcss-scss';
@@ -48,6 +49,16 @@ SHARED.each( ( one ) => {
 		one.remove();
 	}
 } );
+// The skins the shared controls set `color-scheme: dark` for.
+const DARK_SKINS = fs
+	.readFileSync(
+		path.join( NEWSPACK_NODES_SRC, 'shared/styles/_controls.scss' ),
+		'utf8'
+	)
+	.match( /\$np-dark-skins:\s*([^;]+);/ )[ 1 ]
+	.split( ',' )
+	.map( ( skin ) => skin.trim() );
+
 const ORDERS = [
 	[ OWN, SHEET ],
 	[ SHEET, OWN ],
@@ -164,20 +175,83 @@ const onCanvas = ( slug, part, at, longhand ) =>
 	);
 
 /**
- * Each type's color under a skin.
+ * Each type's stroke, or another longhand, under a skin, as its scheme takes it.
  *
- * @param {string} slug The skin.
- * @return {string[]} The colors, in the vocabulary's order.
+ * @param {string} slug       The skin.
+ * @param {string} [longhand] The longhand; the stroke without one.
+ * @return {string[]} The values, in the vocabulary's order.
  */
-const typeColors = ( slug ) =>
+const typeColors = ( slug, longhand = 'stroke' ) =>
 	graphOf( null ).nodes.map( ( { className } ) =>
-		onCanvas(
+		schemed(
 			slug,
-			`<g class="${ BLOCK }__node ${ className }"><rect class="${ BLOCK }__shape"></rect></g>`,
-			`.${ BLOCK }__shape`,
-			'stroke'
+			onCanvas(
+				slug,
+				`<g class="${ BLOCK }__node ${ className }"><rect class="${ BLOCK }__shape"></rect></g>`,
+				`.${ BLOCK }__shape`,
+				longhand
+			)
 		)
 	);
+
+/**
+ * The branch of a `light-dark()` value a skin's color scheme takes.
+ *
+ * @param {string} slug  The skin.
+ * @param {string} value A resolved value.
+ * @return {string} The light or the dark branch, or the value without one.
+ */
+const schemed = ( slug, value ) => {
+	const inner = value.match( /^light-dark\((.*)\)$/ )?.[ 1 ];
+	if ( ! inner ) {
+		return value;
+	}
+	let depth = 0;
+	const comma = [ ...inner ].findIndex( ( char ) => {
+		depth += { '(': 1, ')': -1 }[ char ] ?? 0;
+		return ',' === char && 0 === depth;
+	} );
+	const [ light, dark ] = [
+		inner.slice( 0, comma ),
+		inner.slice( comma + 1 ),
+	].map( ( one ) => one.trim() );
+	return DARK_SKINS.includes( slug ) ? dark : light;
+};
+
+/**
+ * A `color-mix( in srgb, A p%, B )` as its two colors and A's share.
+ *
+ * @param {string} value A resolved color.
+ * @return {{color: string, share: number, with: string}} The mix.
+ */
+const mixOf = ( value ) => {
+	const [ , color, share, other ] = value.match(
+		/^color-mix\(in srgb, (#[0-9a-f]{3,6}) (\d+)%, (#[0-9a-f]{3,6}|transparent)\)$/i
+	);
+	return { color, share: Number( share ), with: other };
+};
+
+/**
+ * A longhand of a part of the canvas under a skin, as its scheme takes it.
+ *
+ * @param {string} slug     The skin.
+ * @param {string} part     The part, under the svg.
+ * @param {string} at       A selector of the element read.
+ * @param {string} longhand The longhand.
+ * @return {string} Its value.
+ */
+const paintedOn = ( slug, part, at, longhand ) =>
+	schemed( slug, onCanvas( slug, part, at, longhand ) );
+
+/**
+ * A token's value under a skin, read on the root that sets it.
+ *
+ * @param {string} slug  The skin.
+ * @param {string} token The token.
+ * @return {string} Its value.
+ */
+const tokenOf = ( slug, token ) =>
+	skinned( slug, '', '.newspack-nodes-skin-root', token, [ [] ] );
 
 beforeEach( () => {
 	window.NewspackNodesData = pageData();
@@ -188,36 +262,66 @@ describe( 'the graph’s paint', () => {
 		const strokes = graphOf( null ).nodes.map( ( { className } ) =>
 			shape( className, 'stroke' )
 		);
-		expect( strokes ).toEqual(
-			[ 1, 2, 4, 5, 8, 7 ].map(
-				( slot ) => `var(--chart-${ slot }, var(--np-chart-${ slot }))`
-			)
-		);
+		strokes.forEach( ( stroke, i ) => {
+			const slot = [ 1, 2, 4, 5, 8, 7 ][ i ];
+			expect( stroke ).toMatch(
+				new RegExp(
+					`^light-dark\\(var\\(--chart-${ slot }, var\\(--np-chart-${ slot }\\)\\),`
+				)
+			);
+		} );
 	} );
 
 	describe.each( THEMES.map( ( { slug } ) => [ slug ] ) )(
 		'under the %s skin',
 		( slug ) => {
+			const dark = DARK_SKINS.includes( slug );
+
 			it( 'resolves every type’s color', () => {
-				typeColors( slug ).forEach( ( color ) =>
+				const slots = typeColors( slug ).map( ( stroke ) =>
+					dark ? mixOf( stroke ).color : stroke
+				);
+				slots.forEach( ( color ) =>
 					expect( color ).toMatch( /^#[0-9a-f]{6}$/i )
+				);
+				typeColors( slug, 'fill' ).forEach( ( fill, i ) => {
+					const { color, share } = mixOf( fill );
+					expect( color ).toBe( slots[ i ] );
+					expect( share ).toBe( dark ? 50 : 14 );
+				} );
+			} );
+
+			it( 'edges each box in its type’s color, toward the ink on a dark skin', () => {
+				const slots = typeColors( slug, 'fill' ).map(
+					( fill ) => mixOf( fill ).color
+				);
+				const ink = tokenOf( slug, '--ink' );
+				expect( typeColors( slug ) ).toEqual(
+					slots.map( ( color ) =>
+						dark
+							? `color-mix(in srgb, ${ color } 55%, ${ ink })`
+							: color
+					)
 				);
 			} );
 
 			it( 'draws a line faintly at rest, full when lit, and fainter dimmed', () => {
-				const opacity = ( names ) =>
-					Number(
-						onCanvas(
-							slug,
-							`<path class="${ BLOCK }__link ${ names }">`,
-							`.${ BLOCK }__link`,
-							'opacity'
-						)
+				const stroke = ( names ) =>
+					paintedOn(
+						slug,
+						`<path class="${ BLOCK }__link ${ names }">`,
+						`.${ BLOCK }__link`,
+						'stroke'
 					);
-				expect( opacity( '' ) ).toBeGreaterThan( 0.3 );
-				expect( opacity( '' ) ).toBeLessThan( 0.4 );
-				expect( opacity( 'is-lit' ) ).toBe( 1 );
-				expect( opacity( 'is-dimmed' ) ).toBe( 0.1 );
+				const share = ( names ) => {
+					const mix = mixOf( stroke( names ) );
+					expect( mix.color ).toBe( tokenOf( slug, '--ink-3' ) );
+					expect( mix.with ).toBe( 'transparent' );
+					return mix.share;
+				};
+				expect( share( '' ) ).toBe( dark ? 70 : 35 );
+				expect( share( 'is-dimmed' ) ).toBe( dark ? 25 : 10 );
+				expect( stroke( 'is-lit' ) ).toBe( tokenOf( slug, '--cyan' ) );
 			} );
 
 			it( 'paints the selected chip as an active button, and any other as its badge', () => {
@@ -257,9 +361,9 @@ describe( 'the graph’s paint', () => {
 			Number( node( nodes[ 0 ].className, 'opacity' ) )
 		).toBeLessThan( 0.5 );
 		expect( node( nodes[ 5 ].className, 'opacity' ) ).toBeUndefined();
-		expect(
-			Number( line( links[ 0 ].className, 'opacity' ) )
-		).toBeLessThan( 0.5 );
+		expect( line( links[ 0 ].className, 'stroke' ) ).toMatch(
+			/ 10%, transparent\), .* 25%, transparent\)\)$/
+		);
 	} );
 
 	it( 'lights the selected entity’s lines in the accent', () => {
@@ -268,8 +372,8 @@ describe( 'the graph’s paint', () => {
 			'var(--cyan, var(--np-primary))'
 		);
 		expect( node( nodes[ 0 ].className, 'opacity' ) ).toBeUndefined();
-		expect( line( '', 'stroke' ) ).toBe(
-			'var(--ink-3, var(--np-text-secondary))'
+		expect( line( '', 'stroke' ) ).toMatch(
+			/^light-dark\(color-mix\(in srgb, var\(--ink-3, var\(--np-text-secondary\)\) 35%/
 		);
 	} );
 

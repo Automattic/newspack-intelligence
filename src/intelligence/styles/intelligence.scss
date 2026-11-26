@@ -558,26 +558,33 @@ $graph-chrome: 340px;
 $type-slots: 1, 2, 4, 5, 8, 7;
 
 // The force graph's paint: each type's color, lines faint enough at rest to
-// read the names over them, and what a selection lights.
+// read the names over them, and what a selection lights. A dark skin paints
+// the lines, the boxes and their edges brighter, which light-dark() picks by
+// the color scheme the skin sets.
 .newspack-intelligence__graph-canvas {
 	$graph: ".newspack-nodes-force-graph";
+	$line: var(--ink-3, var(--np-text-secondary));
+	$paper: var(--paper-2, var(--np-surface-subtle));
+	$ink: var(--ink, var(--np-text));
 
 	@each $slot in $type-slots {
 		#{$graph}__node.is-type-#{list.index($type-slots, $slot)}
 			#{$graph}__shape {
 			$color: var(--chart-#{$slot}, var(--np-chart-#{$slot}));
 
-			fill: color-mix(
-				in srgb,
-				#{$color} 14%,
-				var(--paper-2, var(--np-surface-subtle))
+			fill: light-dark(
+				color-mix(in srgb, #{$color} 14%, #{$paper}),
+				color-mix(in srgb, #{$color} 50%, #{$paper})
 			);
-			stroke: $color;
+			stroke: light-dark(
+				#{$color},
+				color-mix(in srgb, #{$color} 55%, #{$ink})
+			);
 		}
 	}
 
 	#{$graph}__node.is-selected #{$graph}__shape {
-		stroke: var(--ink, var(--np-text));
+		stroke: $ink;
 	}
 
 	#{$graph}__node.is-dimmed {
@@ -585,16 +592,21 @@ $type-slots: 1, 2, 4, 5, 8, 7;
 	}
 
 	#{$graph}__link {
-		opacity: 0.35;
+		stroke: light-dark(
+			color-mix(in srgb, #{$line} 35%, transparent),
+			color-mix(in srgb, #{$line} 70%, transparent)
+		);
 	}
 
 	#{$graph}__link.is-lit {
 		stroke: var(--cyan, var(--np-primary));
-		opacity: 1;
 	}
 
 	#{$graph}__link.is-dimmed {
-		opacity: 0.1;
+		stroke: light-dark(
+			color-mix(in srgb, #{$line} 10%, transparent),
+			color-mix(in srgb, #{$line} 25%, transparent)
+		);
 	}
 }
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **On a dark skin the Graph tab paints brighter.** A line at rest shows 70% of the line ink, not 35%, and a line a selection dims 25%, not 10%; a box is filled with 50% of its type's color, not 14%, and edged in that color mixed with 45% of the ink. A light skin paints as before.
+
+### Fixed
+
+- **A press of the Graph tab's canvas no longer rings it**, once built against a newspack-nodes carrying the fix. The canvas still takes focus, and a key still shows the ring.
+
 ## [0.49.0] - 2026-11-25
 
 ### Changed
