@@ -128,21 +128,21 @@ export function toEntityGraph( { entities, pairs }, { minShared } ) {
 	for ( const place of drawn.flatMap( ( [ a, b ] ) => [ a, b ] ) ) {
 		joins.set( place, ( joins.get( place ) ?? 0 ) + 1 );
 	}
-	const most = entities.reduce(
+	const joined = entities.filter( ( _, place ) => joins.has( place ) );
+	const most = joined.reduce(
 		( high, { items } ) => Math.max( high, items ),
 		0
 	);
 	const count = pageFormat( Intl.NumberFormat );
-	const nodes = entities.map( ( entity, place ) => ( {
+	const nodes = joined.map( ( entity, place ) => ( {
 		id: entity.key,
 		label: labelOf( entity ),
 		className: `is-type-${ types.indexOf( entity.type ) + 1 }`,
 		title: titleOf( entity ),
-		charge: joins.has( place ) ? JOINED_CHARGE : undefined,
+		charge: JOINED_CHARGE,
 		size: CIRCLE_SCALE * circleSize( entity.items, most, LEAST_RADIUS ),
 		detail: count.format( entity.items ),
 		landmark: place < LANDMARKS,
-		dock: ! joins.has( place ),
 	} ) );
 	const links = drawn.map( ( [ a, b, shared ] ) => {
 		const [ source, target ] = [ entities[ a ].key, entities[ b ].key ];

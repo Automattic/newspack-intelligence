@@ -111,6 +111,26 @@ const coves = ( length ) =>
 		items: 1,
 	} ) );
 
+/**
+ * The answer with that many coves more, each sharing 9 items with Harbor
+ * Ledger, so each is drawn.
+ *
+ * @param {number} length How many.
+ * @return {Object} The answer.
+ */
+const withCoves = ( length ) => ( {
+	...ANSWER,
+	entities: [ ...ANSWER.entities, ...coves( length ) ],
+	pairs: [
+		...ANSWER.pairs,
+		...Array.from( { length }, ( _, n ) => [
+			0,
+			ANSWER.entities.length + n,
+			9,
+		] ),
+	],
+} );
+
 const NODE = '.newspack-nodes-force-graph__node';
 
 let wire;
@@ -184,11 +204,13 @@ const WIDE = [ 'Human', 'Locale', 'Happening' ];
 const open = async ( shared, checks = WIDE ) => {
 	const view = renderOnPage( block( shared ) );
 	await screen.findByRole( 'application', { name: 'Entity graph' } );
-	await waitFor( () => expect( node( HARBOR ) ).not.toBeNull() );
+	// A graph of many joined entities untangles before it paints.
+	const painted = { timeout: 10000 };
+	await waitFor( () => expect( node( HARBOR ) ).not.toBeNull(), painted );
 	for ( const name of checks ) {
 		fireEvent.click( screen.getByRole( 'checkbox', { name } ) );
 	}
-	await waitFor( () => expect( node( HARBOR ) ).not.toBeNull() );
+	await waitFor( () => expect( node( HARBOR ) ).not.toBeNull(), painted );
 	return view;
 };
 
@@ -392,10 +414,10 @@ describe( 'its types', () => {
 	it( 'take their entities, lines and chips in and out without a second read', async () => {
 		await open( 9 );
 		fireEvent.click( check( 'Subject area' ) );
-		expect( shown() ).toEqual( [ HARBOR, IDA, PRAIRIE, GULL, TIDES ] );
+		expect( shown() ).toEqual( [ HARBOR, IDA, PRAIRIE, TIDES ] );
 		expect( endsOf( drawn() ) ).toContainEqual( [ HARBOR, TIDES ] );
 		fireEvent.click( check( 'Human' ) );
-		expect( shown() ).toEqual( [ HARBOR, PRAIRIE, GULL, TIDES ] );
+		expect( shown() ).toEqual( [ HARBOR, PRAIRIE, TIDES ] );
 		expect( endsOf( drawn() ) ).toEqual( [
 			[ HARBOR, PRAIRIE ],
 			[ HARBOR, TIDES ],
@@ -485,10 +507,10 @@ describe( 'its types', () => {
 } );
 
 describe( 'what it draws', () => {
-	it( 'draws every entity, and the pairs at or above its attribute', async () => {
+	it( 'draws every entity a pair at or above its attribute joins, and those pairs', async () => {
 		await open( 9 );
 		expect( slider() ).toHaveValue( 9 );
-		expect( canvas().querySelectorAll( NODE ) ).toHaveLength( 4 );
+		expect( canvas().querySelectorAll( NODE ) ).toHaveLength( 3 );
 		expect( endsOf( drawn() ) ).toEqual( [
 			[ IDA, HARBOR ],
 			[ HARBOR, PRAIRIE ],
@@ -500,9 +522,10 @@ describe( 'what it draws', () => {
 		await open( 9 );
 		slide( 23 );
 		expect( endsOf( drawn() ) ).toEqual( [ [ IDA, HARBOR ] ] );
+		expect( canvas().querySelectorAll( NODE ) ).toHaveLength( 2 );
 		slide( 8 );
 		expect( endsOf( drawn() ) ).toHaveLength( 3 );
-		expect( canvas().querySelectorAll( NODE ) ).toHaveLength( 4 );
+		expect( canvas().querySelectorAll( NODE ) ).toHaveLength( 3 );
 		await act( () => new Promise( ( done ) => setTimeout( done, 50 ) ) );
 		expect( wire.sent( 'graph' ) ).toEqual( [ [] ] );
 	} );
@@ -545,17 +568,30 @@ describe( 'the canvas', () => {
 		press( node( PRAIRIE ) );
 		expect( node( PRAIRIE ) ).toHaveClass( 'is-selected', 'is-lit' );
 		expect( node( HARBOR ) ).toHaveClass( 'is-lit' );
-		expect( node( GULL ) ).toHaveClass( 'is-dimmed' );
+		expect( node( IDA ) ).toHaveClass( 'is-dimmed' );
 		expect( actions.onOpenEntity ).not.toHaveBeenCalled();
 
 		press( canvas() );
 		expect( node( PRAIRIE ) ).not.toHaveClass( 'is-selected' );
-		expect( node( GULL ) ).not.toHaveClass( 'is-dimmed' );
+		expect( node( IDA ) ).not.toHaveClass( 'is-dimmed' );
+	} );
+
+	it( 'lights nothing on the canvas for an entity picked from the list it does not draw', async () => {
+		await open( 9 );
+		expect( node( GULL ) ).toBeNull();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Gull Summit' } )
+		);
+		expect(
+			screen.getByRole( 'heading', { name: 'Gull Summit' } )
+		).not.toBeNull();
+		expect( drawn().selectedId ).toBeNull();
+		expect( node( PRAIRIE ) ).not.toHaveClass( 'is-dimmed' );
 	} );
 
 	it( 'opens the entity a double press lands on, and nothing off one', async () => {
 		await open();
-		press( node( GULL ) );
+		press( node( PRAIRIE ) );
 		mouse( 'dblclick', canvas() );
 		expect( actions.onOpenEntity ).not.toHaveBeenCalled();
 		mouse( 'dblclick', node( IDA ).firstChild );
@@ -611,10 +647,7 @@ describe( 'the list', () => {
 	} );
 
 	it( 'keeps its search text and the rest it was asked for through a selection', async () => {
-		wire.replies.graph = {
-			...ANSWER,
-			entities: [ ...ANSWER.entities, ...coves( 29 ) ],
-		};
+		wire.replies.graph = withCoves( 29 );
 		await open();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Show 3 more' } )
@@ -652,7 +685,7 @@ describe( 'the list', () => {
 		fireEvent.keyDown( search(), { key: 'l' } );
 		expect( drawn().selectedId ).toBeNull();
 		fireEvent.keyDown( search(), { key: 'Enter' } );
-		expect( drawn().selectedId ).toBe( GULL );
+		expect( inspector( 'Gull Summit' ) ).not.toBeNull();
 		expect( actions.onOpenEntity ).not.toHaveBeenCalled();
 	} );
 
@@ -748,7 +781,7 @@ describe( 'the inspector', () => {
 
 	it( 'says no drawn line reaches it', async () => {
 		await open( 9 );
-		press( node( GULL ) );
+		fireEvent.click( chip( 'Gull Summit' ) );
 		expect( relatedOf( 'Gull Summit' ) ).toEqual( [] );
 		expect( inspector( 'Gull Summit' ) ).toHaveTextContent(
 			'No related entity is drawn.'
@@ -878,10 +911,7 @@ describe( 'the inspector', () => {
 		[ 'a search that leaves it out', 'sig', HARBOR, 'Harbor Ledger' ],
 		[ 'a cap it stands past', '', 'place:cove-28', 'Cove 28' ],
 	] )( 'hands focus to the search where %s', async ( _, text, key, name ) => {
-		wire.replies.graph = {
-			...ANSWER,
-			entities: [ ...ANSWER.entities, ...coves( 29 ) ],
-		};
+		wire.replies.graph = withCoves( 29 );
 		await open();
 		fireEvent.change( search(), { target: { value: text } } );
 		press( node( key ) );

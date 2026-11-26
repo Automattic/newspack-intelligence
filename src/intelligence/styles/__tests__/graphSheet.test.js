@@ -103,7 +103,7 @@ const line = ( names, longhand ) =>
 		longhand
 	);
 
-/** The six types' entities, the first two sharing 9 items. */
+/** The six types' entities, each two in turn sharing 9 items. */
 const ANSWER = {
 	entities: [
 		'organization',
@@ -119,7 +119,11 @@ const ANSWER = {
 		roles: [],
 		items: 1,
 	} ) ),
-	pairs: [ [ 0, 1, 9 ] ],
+	pairs: [
+		[ 0, 1, 9 ],
+		[ 2, 3, 9 ],
+		[ 4, 5, 9 ],
+	],
 };
 
 /**

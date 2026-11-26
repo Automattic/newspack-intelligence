@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The Graph tab draws its circles three times the shared size from a least radius of 5,** so the largest is five times the smallest, since the related entities' charge spreads the graph far wider than its circles, which the fitted view shrank to dots.
 - **The Graph tab names its twelve largest entities at every zoom,** as newspack-nodes' landmarks, so a zoomed-out graph reads as a map; the rest are named as you zoom in.
-- **An entity no line joins sits in a row under the graph,** docked there, rather than flung to the canvas's edges.
+- **The Graph tab draws only the entities a line joins at the slider's count,** so a higher count draws a smaller graph; the rest stay in the names list and its search, and picking one shows it in the inspector and lights nothing on the canvas. Landmarks and circle sizes count among the entities drawn.
 - **A line at rest is drawn at half its strength while names are hidden,** so the entities stand out from the web; a lit or dimmed line keeps its paint.
 - **The Graph tab's type checkboxes sit on the slider's line,** each centred on the 40px line of the fields beside it, where each one's foot was level with theirs.
 - **A circle stands out on a light skin, the Newspack skins among them:** it is filled with 35% of its type's color, where it took 14%, and with 85% while names are hidden, as a dark skin fills it.

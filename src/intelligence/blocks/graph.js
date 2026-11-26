@@ -124,10 +124,14 @@ function TypesControl( { value, onChange } ) {
  */
 function Canvas( { graph, selected, onSelect } ) {
 	const { onOpenEntity } = useIntelActions();
+	// An entity picked from the list that the graph does not draw lights none.
+	const drawnPick = graph.nodes.some( ( { id } ) => id === selected )
+		? selected
+		: null;
 	// ForceGraph reads a new array as new data.
 	const lit = useMemo(
-		() => lightGraph( graph, selected ),
-		[ graph, selected ]
+		() => lightGraph( graph, drawnPick ),
+		[ graph, drawnPick ]
 	);
 
 	const openPressed = ( e ) => {
@@ -152,7 +156,7 @@ function Canvas( { graph, selected, onSelect } ) {
 			<ForceGraph
 				nodes={ lit.nodes }
 				links={ lit.links }
-				selectedId={ selected }
+				selectedId={ drawnPick }
 				onSelect={ onSelect }
 				onDeselect={ () => onSelect( null ) }
 				ariaLabel={ __( 'Entity graph', 'newspack-intelligence' ) }

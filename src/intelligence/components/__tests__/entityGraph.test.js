@@ -89,7 +89,7 @@ describe( 'ofTypes', () => {
 } );
 
 describe( 'toEntityGraph', () => {
-	it( 'draws every entity, in the answer’s order, colored by its type and titled by type, roles and items', () => {
+	it( 'draws every entity a line joins, in the answer’s order, colored by its type and titled by type, roles and items', () => {
 		expect( toEntityGraph( ANSWER, { minShared: 9 } ).nodes ).toEqual( [
 			{
 				id: 'organization:harbor-ledger',
@@ -100,7 +100,6 @@ describe( 'toEntityGraph', () => {
 				size: 75,
 				detail: '31',
 				landmark: true,
-				dock: false,
 			},
 			{
 				id: 'person:ida-marsh',
@@ -111,7 +110,6 @@ describe( 'toEntityGraph', () => {
 				size: sized( 12, 31 ),
 				detail: '12',
 				landmark: true,
-				dock: false,
 			},
 			{
 				id: 'organization:prairie-signal',
@@ -122,18 +120,6 @@ describe( 'toEntityGraph', () => {
 				size: sized( 7, 31 ),
 				detail: '7',
 				landmark: true,
-				dock: false,
-			},
-			{
-				id: 'event:gull-summit',
-				label: 'Gull Summit',
-				className: TYPE.event,
-				title: 'Gull Summit\nHappening, 1 item',
-				charge: undefined,
-				size: sized( 1, 31 ),
-				detail: '1',
-				landmark: true,
-				dock: true,
 			},
 		] );
 	} );
@@ -147,7 +133,11 @@ describe( 'toEntityGraph', () => {
 				roles: [],
 				items: 14 - place,
 			} ) ),
-			pairs: [],
+			pairs: Array.from( { length: 13 }, ( _, place ) => [
+				place,
+				place + 1,
+				3,
+			] ),
 		};
 		expect(
 			toEntityGraph( many, { minShared: 1 } ).nodes.map(
@@ -156,17 +146,15 @@ describe( 'toEntityGraph', () => {
 		).toEqual( [ ...Array( 12 ).fill( true ), false, false ] );
 	} );
 
-	it( 'docks each entity no line joins, and only those', () => {
+	it( 'draws no entity a line does not join', () => {
 		expect(
-			toEntityGraph( ANSWER, { minShared: 9 } )
-				.nodes.filter( ( { dock } ) => dock )
-				.map( ( { id } ) => id )
-		).toEqual( [ 'event:gull-summit' ] );
-		expect(
-			toEntityGraph( ANSWER, { minShared: 99 } ).nodes.every(
-				( { dock } ) => dock
+			toEntityGraph( ANSWER, { minShared: 9 } ).nodes.map(
+				( { id } ) => id
 			)
-		).toBe( true );
+		).not.toContain( 'event:gull-summit' );
+		expect( toEntityGraph( ANSWER, { minShared: 99 } ).nodes ).toEqual(
+			[]
+		);
 	} );
 
 	it( 'sizes each circle by the most items an entity it draws holds', () => {
@@ -175,20 +163,23 @@ describe( 'toEntityGraph', () => {
 			toEntityGraph( part, { minShared: 9 } ).nodes.map(
 				( { size } ) => size
 			)
-		).toEqual( [ 75, sized( 7, 31 ), sized( 1, 31 ) ] );
-		const small = ofTypes( ANSWER, [ 'person', 'event' ] );
+		).toEqual( [ 75, sized( 7, 31 ) ] );
+		const apart = { ...ANSWER, pairs: [ [ 1, 2, 8 ] ] };
 		expect(
-			toEntityGraph( small, { minShared: 9 } ).nodes.map(
+			toEntityGraph( apart, { minShared: 8 } ).nodes.map(
 				( { size } ) => size
 			)
-		).toEqual( [ 75, sized( 1, 12 ) ] );
+		).toEqual( [ 75, sized( 7, 12 ) ] );
 	} );
 
 	it( 'writes an item count in the page’s own language', () => {
 		document.documentElement.lang = 'de';
 		const many = {
-			entities: [ { ...ANSWER.entities[ 0 ], items: 48213 } ],
-			pairs: [],
+			entities: [
+				{ ...ANSWER.entities[ 0 ], items: 48213 },
+				ANSWER.entities[ 1 ],
+			],
+			pairs: [ [ 0, 1, 9 ] ],
 		};
 		expect(
 			toEntityGraph( many, { minShared: 9 } ).nodes[ 0 ].detail
@@ -236,9 +227,9 @@ describe( 'toEntityGraph', () => {
 		);
 	} );
 
-	it( 'draws every entity and no line above the most any pair shares', () => {
+	it( 'draws nothing above the most any pair shares', () => {
 		const { nodes, links } = toEntityGraph( ANSWER, { minShared: 24 } );
-		expect( nodes ).toHaveLength( 4 );
+		expect( nodes ).toEqual( [] );
 		expect( links ).toEqual( [] );
 	} );
 
@@ -268,8 +259,11 @@ describe( 'toEntityGraph', () => {
 	it( 'refuses a role the vocabulary does not word', () => {
 		const odd = {
 			...ANSWER,
-			entities: [ { ...ANSWER.entities[ 0 ], roles: [ 'landlord' ] } ],
-			pairs: [],
+			entities: [
+				{ ...ANSWER.entities[ 0 ], roles: [ 'landlord' ] },
+				ANSWER.entities[ 1 ],
+			],
+			pairs: [ [ 0, 1, 9 ] ],
 		};
 		expect( () => toEntityGraph( odd, { minShared: 9 } ) ).toThrow(
 			'no roleWords word for "landlord"'
@@ -279,8 +273,11 @@ describe( 'toEntityGraph', () => {
 	it( 'refuses a type the vocabulary does not word', () => {
 		const odd = {
 			...ANSWER,
-			entities: [ { ...ANSWER.entities[ 3 ], type: 'vessel' } ],
-			pairs: [],
+			entities: [
+				{ ...ANSWER.entities[ 3 ], type: 'vessel' },
+				ANSWER.entities[ 1 ],
+			],
+			pairs: [ [ 0, 1, 9 ] ],
 		};
 		expect( () => toEntityGraph( odd, { minShared: 9 } ) ).toThrow(
 			'no typeWords word for "vessel"'
@@ -301,7 +298,6 @@ describe( 'the shared lighting', () => {
 			'organization:harbor-ledger': `${ TYPE.organization } is-lit`,
 			'person:ida-marsh': `${ TYPE.person } is-dimmed`,
 			'organization:prairie-signal': `${ TYPE.organization } is-lit`,
-			'event:gull-summit': `${ TYPE.event } is-dimmed`,
 		} );
 		expect( lit.links.map( ( { className } ) => className ) ).toEqual( [
 			'is-dimmed',
@@ -312,7 +308,7 @@ describe( 'the shared lighting', () => {
 	it( 'keeps each circle’s size and count', () => {
 		const lit = lightGraph(
 			toEntityGraph( ANSWER, { minShared: 9 } ),
-			'event:gull-summit'
+			'person:ida-marsh'
 		);
 		expect(
 			lit.nodes.map( ( { size, detail } ) => [ size, detail ] )
@@ -320,7 +316,6 @@ describe( 'the shared lighting', () => {
 			[ 75, '31' ],
 			[ sized( 12, 31 ), '12' ],
 			[ sized( 7, 31 ), '7' ],
-			[ sized( 1, 31 ), '1' ],
 		] );
 	} );
 } );

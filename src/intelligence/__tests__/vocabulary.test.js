@@ -158,8 +158,18 @@ const GRAPH = {
 			roles: [],
 			items: 7,
 		},
+		{
+			key: 'organization:tern-press',
+			name: 'Tern Press',
+			type: 'organization',
+			roles: [],
+			items: 3,
+		},
 	],
-	pairs: [ [ 0, 1, 6 ] ],
+	pairs: [
+		[ 0, 1, 6 ],
+		[ 0, 2, 4 ],
+	],
 	available: true,
 };
 
