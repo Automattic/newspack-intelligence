@@ -561,8 +561,9 @@ $type-slots: 1, 2, 4, 5, 8, 7;
 // The force graph's paint: each type's color on its circles, lines faint
 // enough at rest to read the names over them, and what a selection lights. A
 // dark skin, which light-dark() reads by the color scheme the skin sets,
-// paints the lines brighter and the circles brighter still, and fills them
-// nearly solid while the view is too far out to draw a name.
+// paints the lines brighter and the circles brighter still. While the view is
+// too far out to draw a name, a line narrows below a pixel, so it is painted
+// stronger to stay visible, and each circle is filled nearly solid.
 .newspack-intelligence__graph-canvas {
 	$graph: ".newspack-nodes-force-graph";
 	$line: var(--ink-3, var(--np-text-secondary));
@@ -622,8 +623,8 @@ $type-slots: 1, 2, 4, 5, 8, 7;
 
 	#{$graph}__view.is-far #{$graph}__link:not(.is-lit, .is-dimmed) {
 		stroke: light-dark(
-			color-mix(in srgb, #{$line} 18%, transparent),
-			color-mix(in srgb, #{$line} 25%, transparent)
+			color-mix(in srgb, #{$line} 45%, transparent),
+			color-mix(in srgb, #{$line} 85%, transparent)
 		);
 	}
 }

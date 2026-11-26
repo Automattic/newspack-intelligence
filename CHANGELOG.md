@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Graph's lines show while zoomed out.** Once the view is too far out to draw names, each line is narrower than a pixel, so its paint rises from 25% to 85% of the line color on a dark skin and from 18% to 45% on a light one, where it was too faint to see.
+
 ## [0.52.1] - 2026-11-26
 
 ### Changed

@@ -367,7 +367,7 @@ describe( 'the graph’s paint', () => {
 				expect( stroke( 'is-lit' ) ).toBe( tokenOf( slug, '--cyan' ) );
 			} );
 
-			it( 'halves a line at rest while names are hidden, and leaves a lit or dimmed one', () => {
+			it( 'strengthens a line at rest while names are hidden, and leaves a lit or dimmed one', () => {
 				const stroke = ( names, view = '' ) =>
 					paintedOn(
 						slug,
@@ -376,7 +376,7 @@ describe( 'the graph’s paint', () => {
 						'stroke'
 					);
 				expect( mixOf( stroke( '', 'is-far' ) ).share ).toBe(
-					dark ? 25 : 18
+					dark ? 85 : 45
 				);
 				[ 'is-lit', 'is-dimmed' ].forEach( ( names ) =>
 					expect( stroke( names, 'is-far' ) ).toBe( stroke( names ) )
