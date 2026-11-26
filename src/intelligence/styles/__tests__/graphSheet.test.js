@@ -8,7 +8,6 @@
  */
 
 /* global NEWSPACK_NODES_SRC */
-import fs from 'fs';
 import path from 'path';
 import * as sass from 'sass';
 import scss from 'postcss-scss';
@@ -16,6 +15,7 @@ import { pageData } from '../../views/__tests__/fixtures';
 import { lightGraph } from '@newspack-nodes/shared/forceGraph';
 import { toEntityGraph } from '../../components/entityGraph';
 import { THEMES } from '@newspack-nodes/shared/theme';
+import { DARK_SKINS, schemed } from '@newspack-nodes/shared/test-utils/schemes';
 
 const { sassImporter } = require(
 	path.join( NEWSPACK_NODES_SRC, 'build-kit/alias-map.cjs' )
@@ -48,16 +48,6 @@ SHARED.each( ( one ) => {
 		one.remove();
 	}
 } );
-// The skins the shared controls set `color-scheme: dark` for.
-const DARK_SKINS = fs
-	.readFileSync(
-		path.join( NEWSPACK_NODES_SRC, 'shared/styles/_controls.scss' ),
-		'utf8'
-	)
-	.match( /\$np-dark-skins:\s*([^;]+);/ )[ 1 ]
-	.split( ',' )
-	.map( ( skin ) => skin.trim() );
-
 const ORDERS = [
 	[ OWN, SHEET ],
 	[ SHEET, OWN ],
@@ -189,39 +179,15 @@ const onCanvas = ( slug, part, at, longhand ) =>
 const typeColors = ( slug, longhand = 'stroke', view = '', element = 'rect' ) =>
 	graphOf( null ).nodes.map( ( { className } ) =>
 		schemed(
-			slug,
 			onCanvas(
 				slug,
 				`<g class="${ BLOCK }__view ${ view }"><g class="${ BLOCK }__node ${ className }"><${ element } class="${ BLOCK }__shape"></${ element }></g></g>`,
 				`.${ BLOCK }__shape`,
 				longhand
-			)
+			),
+			slug
 		)
 	);
-
-/**
- * The branch of a `light-dark()` value a skin's color scheme takes.
- *
- * @param {string} slug  The skin.
- * @param {string} value A resolved value.
- * @return {string} The light or the dark branch, or the value without one.
- */
-const schemed = ( slug, value ) => {
-	const inner = value.match( /^light-dark\((.*)\)$/ )?.[ 1 ];
-	if ( ! inner ) {
-		return value;
-	}
-	let depth = 0;
-	const comma = [ ...inner ].findIndex( ( char ) => {
-		depth += { '(': 1, ')': -1 }[ char ] ?? 0;
-		return ',' === char && 0 === depth;
-	} );
-	const [ light, dark ] = [
-		inner.slice( 0, comma ),
-		inner.slice( comma + 1 ),
-	].map( ( one ) => one.trim() );
-	return DARK_SKINS.includes( slug ) ? dark : light;
-};
 
 /**
  * A `color-mix( in srgb, A p%, B )` as its two colors and A's share.
@@ -246,7 +212,7 @@ const mixOf = ( value ) => {
  * @return {string} Its value.
  */
 const paintedOn = ( slug, part, at, longhand ) =>
-	schemed( slug, onCanvas( slug, part, at, longhand ) );
+	schemed( onCanvas( slug, part, at, longhand ), slug );
 
 /**
  * A token's value under a skin, read on the root that sets it.
@@ -271,7 +237,7 @@ describe( 'the graph’s paint', () => {
 			const slot = [ 1, 2, 4, 5, 8, 7 ][ i ];
 			expect( stroke ).toMatch(
 				new RegExp(
-					`^light-dark\\(var\\(--chart-${ slot }, var\\(--np-chart-${ slot }\\)\\),`
+					`^color-mix\\(in srgb, var\\(--chart-${ slot }, var\\(--np-chart-${ slot }\\)\\) 35%,`
 				)
 			);
 		} );
@@ -283,8 +249,8 @@ describe( 'the graph’s paint', () => {
 			const dark = DARK_SKINS.includes( slug );
 
 			it( 'resolves every type’s color', () => {
-				const slots = typeColors( slug ).map( ( stroke ) =>
-					dark ? mixOf( stroke ).color : stroke
+				const slots = typeColors( slug ).map(
+					( stroke ) => mixOf( stroke ).color
 				);
 				slots.forEach( ( color ) =>
 					expect( color ).toMatch( /^#[0-9a-f]{6}$/i )
@@ -292,20 +258,19 @@ describe( 'the graph’s paint', () => {
 				typeColors( slug, 'fill' ).forEach( ( fill, i ) => {
 					const { color, share } = mixOf( fill );
 					expect( color ).toBe( slots[ i ] );
-					expect( share ).toBe( dark ? 50 : 35 );
+					expect( share ).toBe( 35 );
 				} );
 			} );
 
-			it( 'edges each box in its type’s color, toward the ink on a dark skin', () => {
+			it( 'edges each box in its type’s color, toward the ink', () => {
 				const slots = typeColors( slug, 'fill' ).map(
 					( fill ) => mixOf( fill ).color
 				);
 				const ink = tokenOf( slug, '--ink' );
 				expect( typeColors( slug ) ).toEqual(
-					slots.map( ( color ) =>
-						dark
-							? `color-mix(in srgb, ${ color } 35%, ${ ink })`
-							: color
+					slots.map(
+						( color ) =>
+							`color-mix(in srgb, ${ color } 35%, ${ ink })`
 					)
 				);
 			} );
@@ -460,5 +425,19 @@ describe( 'the graph’s paint', () => {
 		expect(
 			paint( '', '.newspack-intelligence__graph-list', 'overflow-y' )
 		).toBe( 'auto' );
+	} );
+
+	it( 'rules its list off from the canvas, as the class graph rules its inspector', () => {
+		const list = ( longhand ) =>
+			paint( '', '.newspack-intelligence__graph-list', longhand );
+		expect(
+			[ 'width', 'style', 'color' ].map( ( part ) =>
+				list( `border-left-${ part }` )
+			)
+		).toEqual( [
+			'1px',
+			'solid',
+			'var(--paper-shadow, var(--np-border))',
+		] );
 	} );
 } );

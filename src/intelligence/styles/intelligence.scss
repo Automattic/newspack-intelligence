@@ -8,6 +8,8 @@
  */
 
 @use "sass:list";
+@use "sass:map";
+@use "@newspack-nodes/shared/forceGraph/paint" as graph;
 @use "@newspack-nodes/shared/styles/tokens" as base;
 
 // The tab bar sits flush under the header, as the Station's does, so the
@@ -546,87 +548,41 @@ $graph-chrome: 340px;
 	}
 }
 
-// The padding keeps a focus ring clear of the scrolling edge.
+// A rule parts the list from the canvas, along its top once it stacks; the
+// padding keeps a focus ring clear of the scrolling edge.
 .newspack-intelligence__graph-list {
 	display: flex;
 	flex-direction: column;
 	gap: base.$space-sm;
 	padding: 3px;
+	padding-inline-start: base.$space-lg;
+	border-inline-start: 1px solid var(--paper-shadow, var(--np-border));
 	overflow-y: auto;
+
+	@media (max-width: 599px) {
+		padding: 3px;
+		padding-block-start: base.$space-lg;
+		border-inline-start: 0;
+		border-block-start: 1px solid var(--paper-shadow, var(--np-border));
+	}
 }
 
 // In the order of typeWords; of 3, 6 and 7, slot 7 is farthest from the rest.
 $type-slots: 1, 2, 4, 5, 8, 7;
 
-// The force graph's paint: each type's color on its circles, lines faint
-// enough at rest to read the names over them, and what a selection lights. A
-// dark skin, which light-dark() reads by the color scheme the skin sets,
-// paints the lines brighter and the circles brighter still. While the view is
-// too far out to draw a name, a line narrows below a pixel, so it is painted
-// stronger to stay visible, and each circle is filled nearly solid.
+// The force graph painted in each type's color.
 .newspack-intelligence__graph-canvas {
-	$graph: ".newspack-nodes-force-graph";
-	$line: var(--ink-3, var(--np-text-secondary));
-	$paper: var(--paper-2, var(--np-surface-subtle));
-	$ink: var(--ink, var(--np-text));
+	$colors: ();
 
 	@each $slot in $type-slots {
-		$color: var(--chart-#{$slot}, var(--np-chart-#{$slot}));
-
-		#{$graph}__node.is-type-#{list.index($type-slots, $slot)}
-			#{$graph}__shape {
-			fill: light-dark(
-				color-mix(in srgb, #{$color} 35%, #{$paper}),
-				color-mix(in srgb, #{$color} 50%, #{$paper})
-			);
-			stroke: light-dark(
-				#{$color},
-				color-mix(in srgb, #{$color} 35%, #{$ink})
-			);
-		}
-
-		#{$graph}__view.is-far
-			#{$graph}__node.is-type-#{list.index($type-slots, $slot)}
-			#{$graph}__shape {
-			fill: light-dark(
-				color-mix(in srgb, #{$color} 85%, #{$paper}),
-				color-mix(in srgb, #{$color} 85%, #{$ink})
-			);
-		}
-	}
-
-	#{$graph}__node.is-selected #{$graph}__shape {
-		stroke: $ink;
-	}
-
-	#{$graph}__node.is-dimmed {
-		opacity: 0.25;
-	}
-
-	#{$graph}__link {
-		stroke: light-dark(
-			color-mix(in srgb, #{$line} 35%, transparent),
-			color-mix(in srgb, #{$line} 50%, transparent)
+		$colors: map.set(
+			$colors,
+			".is-type-#{list.index($type-slots, $slot)}",
+			var(--chart-#{$slot}, var(--np-chart-#{$slot}))
 		);
 	}
 
-	#{$graph}__link.is-lit {
-		stroke: var(--cyan, var(--np-primary));
-	}
-
-	#{$graph}__link.is-dimmed {
-		stroke: light-dark(
-			color-mix(in srgb, #{$line} 10%, transparent),
-			color-mix(in srgb, #{$line} 20%, transparent)
-		);
-	}
-
-	#{$graph}__view.is-far #{$graph}__link:not(.is-lit, .is-dimmed) {
-		stroke: light-dark(
-			color-mix(in srgb, #{$line} 45%, transparent),
-			color-mix(in srgb, #{$line} 85%, transparent)
-		);
-	}
+	@include graph.paint($colors);
 }
 
 // A bare glyph beside a title: no box, the secondary text colour until a
