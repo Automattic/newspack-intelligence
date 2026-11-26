@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-11-25
+
 ### Added
 
 - **Selecting an entity on the Graph tab opens an inspector in place of the name list.** It names the entity, its type and open roles, and how many items are about it; offers **Open profile**, which does what Enter does; and lists each entity a drawn line joins it to, with the items they share, the most shared first, each a button selecting that entity. **Close**, Escape inside it and a press of the canvas clear the selection and bring the list back with its search text and "Show more" as they were. It reads only the answer the tab already holds. A chip or a related entity that took the focus with it hands the focus to the inspector's heading, and Close or Escape inside it hands the focus back to the entity's chip, or to "Find a name" where the list does not show it; a press of the canvas or Escape there leaves the focus on the canvas.
