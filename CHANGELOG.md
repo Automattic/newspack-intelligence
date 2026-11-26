@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-11-26
+
 ### Changed
 
 - **The Graph tab draws its circles three times the shared size from a least radius of 5,** so the largest is five times the smallest, since the related entities' charge spreads the graph far wider than its circles, which the fitted view shrank to dots.
