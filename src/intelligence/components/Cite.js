@@ -24,18 +24,16 @@ export default function Cite( { url, title } ) {
 
 /**
  * One entity an answer names, as the pill opening it: the shared status
- * badge's `is-pill is-info` rather than a button's box, its name, or its key where the graph holds no name, cut
- * short by its width alone, so its accessible name stays whole. A pill that
- * only opens may be the `selected` one of its list. Given `onRemove`, the pill
- * holds two buttons, the name opening the entity and an × beside it, named
- * `removeLabel`, removing it.
+ * badge's `is-pill is-info` rather than a button's box, its name, or its key
+ * where the graph holds no name, cut short by its width alone, so its
+ * accessible name stays whole. Given `onRemove`, the pill holds two buttons,
+ * the name opening the entity and an × beside it, named `removeLabel`,
+ * removing it.
  *
  * @param {Object}                props
  * @param {string}                props.entityKey     The entity's key.
  * @param {?string}               props.name          Its name.
  * @param {(key: string) => void} props.onOpen        Opens it.
- * @param {string}                [props.description] Its tooltip.
- * @param {boolean}               [props.selected]    Whether it is the selected one of its list.
  * @param {(key: string) => void} [props.onRemove]    Removes it; absent for a pill that only opens.
  * @param {string}                [props.removeLabel] What the × says it removes.
  * @return {import('react').ReactElement} The chip.
@@ -44,8 +42,6 @@ export function EntityChip( {
 	entityKey,
 	name,
 	onOpen,
-	description,
-	selected,
 	onRemove,
 	removeLabel,
 } ) {
@@ -60,9 +56,7 @@ export function EntityChip( {
 		return (
 			<button
 				type="button"
-				className={ selected ? `${ pill } is-active` : pill }
-				aria-current={ selected || undefined }
-				title={ description }
+				className={ pill }
 				onClick={ () => onOpen( entityKey ) }
 			>
 				{ label }
@@ -74,7 +68,6 @@ export function EntityChip( {
 			<button
 				type="button"
 				className="newspack-intelligence__pill-open"
-				title={ description }
 				onClick={ () => onOpen( entityKey ) }
 			>
 				{ label }

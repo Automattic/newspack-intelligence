@@ -1,14 +1,15 @@
 /**
  * The `graph` block: every entity the items a reader may read are about, on
- * the shared force graph, and a line for each one and what its Related list
- * holds, sharing at least the slider's count of items. The slider filters
- * what it holds, and so does a checkbox for each type, which lays the graph
- * out afresh.
+ * the shared force graph, each a circle holding how many items are about it,
+ * and a line for each one and what its Related list holds, sharing at least
+ * the slider's count of items. The slider filters what it holds, and so does
+ * a checkbox for each type, organizations alone at first, which lays the
+ * graph out afresh.
  *
  * A press on the canvas selects an entity and lights what it reaches, and a
  * double press or Enter opens its profile. The list beside it, each entity a
- * chip, does the same without a pointer: a pick selects, and a second pick
- * of the one selected opens it.
+ * chip, selects without a pointer. While an entity is selected an inspector
+ * stands in the list's place, read from the answer the block holds.
  */
 
 import {
@@ -22,19 +23,23 @@ import {
 	useEffect,
 	useId,
 	useMemo,
+	useRef,
 	useState,
 } from '@wordpress/element';
-import { __ } from '@wordpress/i18n';
-import { ForceGraph } from '@newspack-nodes/shared/forceGraph';
+import { __, _n, sprintf } from '@wordpress/i18n';
+import Section from '@newspack-nodes/shared/components/Section';
+import { ForceGraph, lightGraph } from '@newspack-nodes/shared/forceGraph';
+import { primaryButtonClass } from '@newspack-nodes/shared/utils/buttonClass';
 import { AnswerBody } from '../components/Answer';
 import CappedList from '../components/CappedList';
 import { EntityChip } from '../components/Cite';
 import {
+	aboutLine,
 	labelOf,
-	lightGraph,
 	ofTypes,
 	toEntityGraph,
 } from '../components/entityGraph';
+import { pageFormat } from '../components/format';
 import { words } from '../components/words';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { useIntelActions } from '../layout/PageContext';
@@ -43,8 +48,8 @@ import { useIntelActions } from '../layout/PageContext';
 const LEAST_SHARED = 1;
 const MOST_SHARED = 50;
 
-/** The types left out until their checkbox is checked. */
-const UNCHECKED = [ 'product', 'topic' ];
+/** The types shown until another's checkbox is checked. */
+const CHECKED = [ 'organization' ];
 
 /** The entities listed before the rest are asked for. */
 const LISTED = 30;
@@ -56,6 +61,7 @@ const LISTED = 30;
 
 /** @typedef {import('../components/entityGraph').GraphAnswer} GraphAnswer */
 /** @typedef {import('../components/entityGraph').GraphEntity} GraphEntity */
+/** @typedef {import('../components/entityGraph').EntityGraph} EntityGraph */
 
 /**
  * The slider over how many items a pair must share.
@@ -111,18 +117,13 @@ function TypesControl( { value, onChange } ) {
  * The canvas.
  *
  * @param {Object}                 props
- * @param {GraphAnswer}            props.answer    The part of the answer it draws.
- * @param {number}                 props.minShared The fewest items a line stands for.
- * @param {?string}                props.selected  The selected entity's key.
- * @param {(key: ?string) => void} props.onSelect  Selects an entity, or none.
+ * @param {EntityGraph}            props.graph    The graph it draws.
+ * @param {?string}                props.selected The selected entity's key.
+ * @param {(key: ?string) => void} props.onSelect Selects an entity, or none.
  * @return {import('react').ReactElement} The canvas.
  */
-function Canvas( { answer, minShared, selected, onSelect } ) {
+function Canvas( { graph, selected, onSelect } ) {
 	const { onOpenEntity } = useIntelActions();
-	const graph = useMemo(
-		() => toEntityGraph( answer, { minShared } ),
-		[ answer, minShared ]
-	);
 	// ForceGraph reads a new array as new data.
 	const lit = useMemo(
 		() => lightGraph( graph, selected ),
@@ -180,41 +181,53 @@ function CanvasSkeleton() {
 /**
  * @typedef {Object} EntityListProps
  * @property {GraphEntity[]}          entities The entities.
- * @property {?string}                selected The selected entity's key.
  * @property {(key: string) => void}  onSelect Selects an entity.
  * @property {string}                 text     The text searched for.
  * @property {(text: string) => void} onText   Takes another.
  * @property {boolean}                all      Whether the rest were asked for.
  * @property {() => void}             onAll    Takes the ask for them.
+ * @property {{current: ?string}}     returnTo The entity the inspector closed on, whose chip takes the focus once.
  */
 
 /**
  * Every entity the canvas draws, those whose name holds the text searched
- * for, as chips, the selected one marked and shown however far down it
- * stands. Enter in a search selects the first. A move of the slider leaves
- * every chip alone.
+ * for, as chips, each selecting its entity. Enter in a search selects the
+ * first. A move of the slider leaves every chip alone. Back from an
+ * inspector closed from inside it, the list hands the focus to the chip of
+ * the entity it showed, else to the search where the list does not show it.
  *
  * @type {import('react').NamedExoticComponent<EntityListProps>}
  */
 const EntityList = memo( function EntityList( {
 	entities,
-	selected,
 	onSelect,
 	text,
 	onText,
 	all,
 	onAll,
+	returnTo,
 } ) {
-	const { onOpenEntity } = useIntelActions();
+	const column = useRef( /** @type {?HTMLDivElement} */ ( null ) );
+	const search = useRef( /** @type {?HTMLInputElement} */ ( null ) );
+	useEffect( () => {
+		const key = returnTo.current;
+		returnTo.current = null;
+		if ( null === key ) {
+			return;
+		}
+		const row = [ ...column.current.querySelectorAll( 'li' ) ].find(
+			( one ) => key === one.dataset.key
+		);
+		( row?.querySelector( 'button' ) ?? search.current ).focus();
+	}, [ returnTo ] );
 	const wanted = text.trim().toLowerCase();
 	const found = entities.filter( ( entity ) =>
 		labelOf( entity ).toLowerCase().includes( wanted )
 	);
-	const pick = ( key ) =>
-		key === selected ? onOpenEntity( key ) : onSelect( key );
 	return (
-		<div className="newspack-intelligence__graph-list">
+		<div className="newspack-intelligence__graph-list" ref={ column }>
 			<SearchControl
+				ref={ search }
 				label={ __( 'Find a name', 'newspack-intelligence' ) }
 				placeholder={ __( 'Find a name…', 'newspack-intelligence' ) }
 				value={ text }
@@ -235,26 +248,16 @@ const EntityList = memo( function EntityList( {
 				<CappedList
 					rows={ found }
 					limit={ LISTED }
-					keep={ ( { key } ) => key === selected }
 					all={ all }
 					onAll={ onAll }
 					className="newspack-intelligence__chips"
 				>
 					{ ( { key, name } ) => (
-						<li key={ key }>
+						<li key={ key } data-key={ key }>
 							<EntityChip
 								entityKey={ key }
 								name={ name }
-								onOpen={ pick }
-								selected={ key === selected }
-								description={
-									key === selected
-										? __(
-												'Selected. Press again to open its profile.',
-												'newspack-intelligence'
-										  )
-										: undefined
-								}
+								onOpen={ onSelect }
 							/>
 						</li>
 					) }
@@ -265,6 +268,139 @@ const EntityList = memo( function EntityList( {
 } );
 
 /**
+ * The entities a drawn line joins an entity to, the most shared first.
+ *
+ * @param {EntityGraph}   graph    The graph drawn.
+ * @param {GraphEntity[]} entities The entities it draws.
+ * @param {string}        key      The entity's key.
+ * @return {Array<{entity: GraphEntity, shared: number}>} Each, with the items both are about.
+ */
+function relatedOf( graph, entities, key ) {
+	const byKey = new Map( entities.map( ( one ) => [ one.key, one ] ) );
+	return graph.links
+		.filter( ( { source, target } ) => key === source || key === target )
+		.map( ( { source, target, weight } ) => ( {
+			entity: byKey.get( key === source ? target : source ),
+			shared: weight,
+		} ) )
+		.sort( ( one, two ) => two.shared - one.shared );
+}
+
+/**
+ * @typedef {Object} InspectorProps
+ * @property {EntityGraph}           graph    The graph drawn.
+ * @property {GraphEntity[]}         entities The entities it draws.
+ * @property {string}                selected The selected entity's key.
+ * @property {(key: string) => void} onSelect Selects an entity.
+ * @property {() => void}            onClose  Clears the selection from inside.
+ */
+
+/**
+ * The selected entity in the list's place: its name heading the column, its
+ * type and open roles, how many items are about it, Open profile, and each
+ * entity a drawn line joins it to, selecting that one. Close or Escape
+ * clears the selection. A pick that took the focus with it hands the focus
+ * to the heading.
+ *
+ * @param {InspectorProps} props
+ * @return {import('react').ReactElement} The inspector.
+ */
+function Inspector( { graph, entities, selected, onSelect, onClose } ) {
+	const { onOpenEntity } = useIntelActions();
+	const heading = useRef( /** @type {?HTMLHeadingElement} */ ( null ) );
+	useEffect( () => {
+		const { activeElement, body } = heading.current.ownerDocument;
+		if ( ! activeElement || body === activeElement ) {
+			heading.current.focus();
+		}
+	}, [ selected ] );
+	const entity = entities.find( ( { key } ) => key === selected );
+	const related = relatedOf( graph, entities, selected );
+	return (
+		// eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape bubbles up from the controls inside; the column takes no input itself.
+		<div
+			className="newspack-intelligence__graph-list"
+			onKeyDown={ ( e ) => 'Escape' === e.key && onClose() }
+		>
+			<Section
+				ref={ heading }
+				heading={ labelOf( entity ) }
+				description={ aboutLine( entity ) }
+				actions={
+					<button
+						type="button"
+						className="button button-small"
+						onClick={ onClose }
+					>
+						{ __( 'Close', 'newspack-intelligence' ) }
+					</button>
+				}
+			>
+				<p className="newspack-intelligence__counts">
+					{ sprintf(
+						/* translators: %s: how many items are about the entity. */
+						_n(
+							'%s item about it',
+							'%s items about it',
+							entity.items,
+							'newspack-intelligence'
+						),
+						pageFormat( Intl.NumberFormat ).format( entity.items )
+					) }
+				</p>
+				<p>
+					<button
+						type="button"
+						className={ primaryButtonClass() }
+						onClick={ () => onOpenEntity( selected ) }
+					>
+						{ __( 'Open profile', 'newspack-intelligence' ) }
+					</button>
+				</p>
+				<h3>{ __( 'Related', 'newspack-intelligence' ) }</h3>
+				{ 0 === related.length ? (
+					<p className="newspack-nodes-empty-state is-quiet">
+						{ __(
+							'No related entity is drawn.',
+							'newspack-intelligence'
+						) }
+					</p>
+				) : (
+					<CappedList
+						key={ selected }
+						rows={ related }
+						limit={ LISTED }
+					>
+						{ ( { entity: other, shared } ) => (
+							<li
+								key={ other.key }
+								className="newspack-intelligence__actions"
+							>
+								<EntityChip
+									entityKey={ other.key }
+									name={ other.name }
+									onOpen={ onSelect }
+								/>
+								<span className="newspack-intelligence__count">
+									{ sprintf(
+										/* translators: %d: items both entities are about. */
+										__(
+											'%d shared',
+											'newspack-intelligence'
+										),
+										shared
+									) }
+								</span>
+							</li>
+						) }
+					</CappedList>
+				) }
+			</Section>
+		</div>
+	);
+}
+
+/**
  * @param {Object}          props
  * @param {GraphAttributes} props.attributes Its attributes.
  * @return {import('react').ReactElement} The block.
@@ -273,11 +409,7 @@ function View( { attributes } ) {
 	const { shared } = attributes;
 	const [ minShared, setMinShared ] = useState( shared );
 	useEffect( () => setMinShared( shared ), [ shared ] );
-	const [ types, setTypes ] = useState( () =>
-		Object.keys( words( 'typeWords' ) ).filter(
-			( type ) => ! UNCHECKED.includes( type )
-		)
-	);
+	const [ types, setTypes ] = useState( CHECKED );
 	const [ picked, setPicked ] = useState( /** @type {?string} */ ( null ) );
 	const [ text, setText ] = useState( '' );
 	const [ all, setAll ] = useState( false );
@@ -288,13 +420,31 @@ function View( { attributes } ) {
 		() => ( answer ? ofTypes( answer, types ) : null ),
 		[ answer, types ]
 	);
+	const graph = useMemo(
+		() => ( shown ? toEntityGraph( shown, { minShared } ) : null ),
+		[ shown, minShared ]
+	);
 	const held = shown?.entities.some( ( { key } ) => key === picked );
 	const selected = held ? picked : null;
+	const returnTo = useRef( /** @type {?string} */ ( null ) );
+	const close = () => {
+		returnTo.current = selected;
+		setPicked( null );
+	};
+	const pickTypes = ( next ) => {
+		setTypes( next );
+		const type = answer?.entities.find(
+			( { key } ) => key === picked
+		)?.type;
+		if ( type && ! next.includes( type ) ) {
+			setPicked( null );
+		}
+	};
 	return (
 		<div>
 			<div className="newspack-intelligence__controls">
 				<SharedControl value={ minShared } onChange={ setMinShared } />
-				<TypesControl value={ types } onChange={ setTypes } />
+				<TypesControl value={ types } onChange={ pickTypes } />
 			</div>
 			<AnswerBody
 				read={ read }
@@ -309,20 +459,29 @@ function View( { attributes } ) {
 					<div className="newspack-intelligence__graph">
 						<Canvas
 							key={ types.join( ' ' ) }
-							answer={ shown }
-							minShared={ minShared }
+							graph={ graph }
 							selected={ selected }
 							onSelect={ setPicked }
 						/>
-						<EntityList
-							entities={ shown.entities }
-							selected={ selected }
-							onSelect={ setPicked }
-							text={ text }
-							onText={ setText }
-							all={ all }
-							onAll={ showAll }
-						/>
+						{ null === selected ? (
+							<EntityList
+								entities={ shown.entities }
+								onSelect={ setPicked }
+								text={ text }
+								onText={ setText }
+								all={ all }
+								onAll={ showAll }
+								returnTo={ returnTo }
+							/>
+						) : (
+							<Inspector
+								graph={ graph }
+								entities={ shown.entities }
+								selected={ selected }
+								onSelect={ setPicked }
+								onClose={ close }
+							/>
+						) }
 					</div>
 				) }
 			</AnswerBody>

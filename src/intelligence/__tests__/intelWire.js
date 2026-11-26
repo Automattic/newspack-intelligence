@@ -12,9 +12,10 @@ import { installFakeCommandWire } from '@newspack-nodes/shared/test-utils/fakeCo
 /**
  * Install the double.
  *
- * @return {{replies: Object, sent: (verb: string) => string[][], sentTo: (verb: string) => string[]}}
+ * @return {{replies: Object, sent: (verb: string) => string[][], sentTo: (verb: string) => string[], verbs: () => string[]}}
  *   The answers by verb, which a test fills; the argument tokens of every
- *   command of a verb that went on the wire; and the CI each was addressed to.
+ *   command of a verb that went on the wire; the CI each was addressed to;
+ *   and the verb of every command that went on the wire, in order.
  */
 export function intelWire() {
 	const replies = {};
@@ -31,5 +32,6 @@ export function intelWire() {
 		sent: ( verb ) =>
 			ofVerb( verb ).map( ( m ) => m[ VALUE ].arguments ?? [] ),
 		sentTo: ( verb ) => ofVerb( verb ).map( ( m ) => m[ TO ] ),
+		verbs: () => wire.batches.flat().map( ( m ) => m[ VALUE ]?.name ),
 	};
 }

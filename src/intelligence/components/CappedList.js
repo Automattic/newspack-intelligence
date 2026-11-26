@@ -12,7 +12,6 @@ import { __, sprintf } from '@wordpress/i18n';
  * @param {Object}                                               props
  * @param {T[]}                                                  props.rows        Every row the list holds.
  * @param {number}                                               props.limit       The rows shown before the rest are asked for.
- * @param {(row: T) => boolean}                                  [props.keep]      Whether a row shows past the limit, in its place.
  * @param {boolean}                                              [props.all]       Whether the rest were asked for; the list's own answer when omitted.
  * @param {() => void}                                           [props.onAll]     Takes the ask for the rest, with `all`.
  * @param {string}                                               [props.className] The list's class, else a profile's facts list's.
@@ -22,17 +21,13 @@ import { __, sprintf } from '@wordpress/i18n';
 export default function CappedList( {
 	rows,
 	limit,
-	keep,
 	all: held,
 	onAll,
 	className = 'newspack-intelligence__facts',
 	children,
 } ) {
 	const [ asked, setAsked ] = useState( false );
-	const shown =
-		held ?? asked
-			? rows
-			: rows.filter( ( row, index ) => index < limit || keep?.( row ) );
+	const shown = held ?? asked ? rows : rows.slice( 0, limit );
 	return (
 		<>
 			<ul className={ className }>

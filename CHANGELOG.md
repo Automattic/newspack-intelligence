@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Selecting an entity on the Graph tab opens an inspector in place of the name list.** It names the entity, its type and open roles, and how many items are about it; offers **Open profile**, which does what Enter does; and lists each entity a drawn line joins it to, with the items they share, the most shared first, each a button selecting that entity. **Close**, Escape inside it and a press of the canvas clear the selection and bring the list back with its search text and "Show more" as they were. It reads only the answer the tab already holds. A chip or a related entity that took the focus with it hands the focus to the inspector's heading, and Close or Escape inside it hands the focus back to the entity's chip, or to "Find a name" where the list does not show it; a press of the canvas or Escape there leaves the focus on the canvas.
+
 ### Changed
 
+- **The Graph tab draws each entity as a circle holding how many items are about it**, in the page's own number format, sized by the square root of its share of the most items any entity drawn holds, from 10 to 30 pixels. Its type's colors, the dark-skin paint and the fill while names are hidden apply to the circle as they did to the box.
+- **The Graph tab's type checkboxes start with organizations alone checked**, in place of every type but products and topics.
+- **A pick of a name in the Graph tab's list selects it and nothing more.** The list gives way to the inspector while anything is selected, so a chip no longer marks itself selected or opens a profile on a second pick. `EntityChip` no longer takes `selected` or `description`, and `CappedList` no longer takes `keep`.
+- **Unchecking the selected entity's type clears the selection**, so checking it again brings back the list, not that entity's inspector.
 - **On a dark skin the Graph tab paints brighter.** A line at rest shows 50% of the line ink, not 35%, and a line a selection dims 20%, not 10%. A box is filled with 50% of its type's color, not 14%, and edged in that color mixed with 65% of the ink; while the view is too far out to draw names, its fill is 85% of its type's color and 15% ink. A light skin paints as before.
 
 ### Fixed

@@ -88,7 +88,9 @@ describe( 'Graph', () => {
 			name: 'Harbor Ledger',
 		} );
 		fireEvent.click( chip );
-		fireEvent.click( chip );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Open profile' } )
+		);
 		expect( actions.onOpenEntity.mock.calls ).toEqual( [
 			[ 'organization:harbor-ledger' ],
 		] );

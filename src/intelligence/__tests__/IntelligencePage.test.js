@@ -763,18 +763,20 @@ describe( 'IntelligencePage', () => {
 			screen.getByRole( 'spinbutton', { name: 'Items shared, at least' } )
 		).toHaveValue( 1 );
 		fireEvent.click( chip );
-		chip.focus();
-		fireEvent.click( chip );
+		const open = screen.getByRole( 'button', { name: 'Open profile' } );
+		open.focus();
+		fireEvent.click( open );
+		const back = await screen.findByRole( 'button', {
+			name: 'Back to Graph',
+		} );
 		expect(
 			await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } )
 		).toBeInTheDocument();
 		expect( canvas ).not.toBeVisible();
 
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Back to Graph' } )
-		);
+		fireEvent.click( back );
 		expect( canvas ).toBeVisible();
-		expect( chip ).toHaveFocus();
+		expect( open ).toHaveFocus();
 		expect( wire.sent( 'graph' ) ).toEqual( [ [] ] );
 	} );
 

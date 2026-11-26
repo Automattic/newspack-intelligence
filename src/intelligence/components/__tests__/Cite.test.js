@@ -2,10 +2,9 @@
 /**
  * An entity chip is the one pill every view opens an entity from: full-round
  * rather than a button's box, its name inside the part its width cuts short,
- * so its accessible name stays whole, its key where the graph holds no name,
- * and its description as its tooltip. Given a pressed state, it is a toggle
- * wearing the active style while pressed. Given a removal, the pill holds a
- * second button, an × named for what it removes, beside the one opening it.
+ * so its accessible name stays whole, and its key where the graph holds no
+ * name. Given a removal, the pill holds a second button, an × named for what
+ * it removes, beside the one opening it.
  */
 
 import { render, screen, fireEvent, within } from '@testing-library/react';
@@ -18,7 +17,6 @@ describe( 'EntityChip', () => {
 			<EntityChip
 				entityKey="organization:tern-ledger"
 				name="Tern Ledger"
-				description="Client since 2025"
 				onOpen={ onOpen }
 			/>
 		);
@@ -30,7 +28,6 @@ describe( 'EntityChip', () => {
 			'newspack-intelligence__pill'
 		);
 		expect( chip ).not.toHaveClass( 'button' );
-		expect( chip ).toHaveAttribute( 'title', 'Client since 2025' );
 		expect( within( chip ).getByText( 'Tern Ledger' ) ).toHaveClass(
 			'newspack-intelligence__pill-name'
 		);
@@ -86,26 +83,7 @@ describe( 'EntityChip', () => {
 		expect( onOpen ).toHaveBeenCalledWith( 'organization:prairie-signal' );
 	} );
 
-	it.each( [
-		[ true, 'true' ],
-		[ false, null ],
-	] )( 'says whether it is the selected one, %s', ( selected, said ) => {
-		render(
-			<EntityChip
-				entityKey="organization:prairie-signal"
-				name="Prairie Signal"
-				onOpen={ jest.fn() }
-				selected={ selected }
-			/>
-		);
-		const chip = screen.getByRole( 'button' );
-		expect( chip.getAttribute( 'aria-current' ) ).toBe( said );
-		expect( chip ).not.toHaveAttribute( 'aria-pressed' );
-		expect( chip.classList.contains( 'is-active' ) ).toBe( selected );
-		expect( chip ).toHaveClass( 'is-info', 'newspack-intelligence__pill' );
-	} );
-
-	it( 'is plain without a selection', () => {
+	it( 'is the plain badge pill', () => {
 		render(
 			<EntityChip
 				entityKey="organization:prairie-signal"

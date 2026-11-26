@@ -8,7 +8,6 @@
  */
 
 @use "sass:list";
-@use "@newspack-nodes/shared/styles/button-roles" as role;
 @use "@newspack-nodes/shared/styles/tokens" as base;
 
 // The tab bar sits flush under the header, as the Station's does, so the
@@ -239,11 +238,6 @@
 		border: 0;
 		font-family: inherit;
 		cursor: pointer;
-	}
-
-	// The selected pill reads as any active control.
-	.newspack-intelligence__pill.is-active {
-		@include role.toggle-active;
 	}
 
 	&__pill-name {
@@ -557,11 +551,11 @@ $graph-chrome: 340px;
 // In the order of typeWords; of 3, 6 and 7, slot 7 is farthest from the rest.
 $type-slots: 1, 2, 4, 5, 8, 7;
 
-// The force graph's paint: each type's color, lines faint enough at rest to
-// read the names over them, and what a selection lights. A dark skin, which
-// light-dark() reads by the color scheme the skin sets, paints the lines
-// brighter and the boxes brighter still, and fills them nearly solid while
-// the view is too far out to draw a name.
+// The force graph's paint: each type's color on its circles, lines faint
+// enough at rest to read the names over them, and what a selection lights. A
+// dark skin, which light-dark() reads by the color scheme the skin sets,
+// paints the lines brighter and the circles brighter still, and fills them
+// nearly solid while the view is too far out to draw a name.
 .newspack-intelligence__graph-canvas {
 	$graph: ".newspack-nodes-force-graph";
 	$line: var(--ink-3, var(--np-text-secondary));

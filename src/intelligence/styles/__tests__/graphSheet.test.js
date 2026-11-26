@@ -1,9 +1,10 @@
 /* eslint-env jest */
 /**
- * The graph's paint: each type's color, the lines at rest, what a selection
- * lights and dims, and the canvas's height. The force graph's own sheet and
- * this plugin's ship in files that may load in either order, so each is read
- * both ways, and the colors are resolved under every skin.
+ * The graph's paint: each type's color on a box or a circle, the lines at
+ * rest, what a selection lights and dims, and the canvas's height. The force
+ * graph's own sheet and this plugin's ship in files that may load in either
+ * order, so each is read both ways, and the colors are resolved under every
+ * skin.
  */
 
 /* global NEWSPACK_NODES_SRC */
@@ -12,7 +13,8 @@ import path from 'path';
 import * as sass from 'sass';
 import scss from 'postcss-scss';
 import { pageData } from '../../views/__tests__/fixtures';
-import { lightGraph, toEntityGraph } from '../../components/entityGraph';
+import { lightGraph } from '@newspack-nodes/shared/forceGraph';
+import { toEntityGraph } from '../../components/entityGraph';
 import { THEMES } from '@newspack-nodes/shared/theme';
 
 const { sassImporter } = require(
@@ -37,15 +39,12 @@ OWN.walkRules( /:has\(/, ( rule ) => rule.remove() );
 const SKINS = compile(
 	path.join( NEWSPACK_NODES_SRC, 'theme/newspack-theme.scss' )
 );
-// The shared badge's and active button's rules; jsdom cannot read every other.
+// The shared badge's rules; jsdom cannot read every other.
 const SHARED = compile(
 	path.join( NEWSPACK_NODES_SRC, 'ui/newspack-nodes-ui.scss' )
 );
 SHARED.each( ( one ) => {
-	if (
-		'rule' !== one.type ||
-		! /status-badge|\.button\.is-active$/.test( one.selector )
-	) {
+	if ( 'rule' !== one.type || ! /status-badge/.test( one.selector ) ) {
 		one.remove();
 	}
 } );
@@ -180,15 +179,16 @@ const onCanvas = ( slug, part, at, longhand ) =>
  * @param {string} slug       The skin.
  * @param {string} [longhand] The longhand; the stroke without one.
  * @param {string} [view]     The view's classes, such as `is-far`.
+ * @param {string} [element]  The shape's element, a box's `rect` or a `circle`.
  * @return {string[]} The values, in the vocabulary's order.
  */
-const typeColors = ( slug, longhand = 'stroke', view = '' ) =>
+const typeColors = ( slug, longhand = 'stroke', view = '', element = 'rect' ) =>
 	graphOf( null ).nodes.map( ( { className } ) =>
 		schemed(
 			slug,
 			onCanvas(
 				slug,
-				`<g class="${ BLOCK }__view ${ view }"><g class="${ BLOCK }__node ${ className }"><rect class="${ BLOCK }__shape"></rect></g></g>`,
+				`<g class="${ BLOCK }__view ${ view }"><g class="${ BLOCK }__node ${ className }"><${ element } class="${ BLOCK }__shape"></${ element }></g></g>`,
 				`.${ BLOCK }__shape`,
 				longhand
 			)
@@ -320,6 +320,29 @@ describe( 'the graph’s paint', () => {
 				);
 			} );
 
+			it( 'paints each circle as it paints a box, over the shared ring', () => {
+				for ( const [ longhand, view ] of [
+					[ 'stroke', '' ],
+					[ 'fill', '' ],
+					[ 'fill', 'is-far' ],
+				] ) {
+					expect(
+						typeColors( slug, longhand, view, 'circle' )
+					).toEqual( typeColors( slug, longhand, view ) );
+				}
+			} );
+
+			it( 'writes a circle’s count in the ink', () => {
+				expect(
+					paintedOn(
+						slug,
+						`<g class="${ BLOCK }__node is-type-1"><circle class="${ BLOCK }__shape"></circle><text class="${ BLOCK }__detail"></text></g>`,
+						`.${ BLOCK }__detail`,
+						'fill'
+					)
+				).toBe( tokenOf( slug, '--ink' ) );
+			} );
+
 			it( 'draws a line faintly at rest, full when lit, and fainter dimmed', () => {
 				const stroke = ( names ) =>
 					paintedOn(
@@ -339,7 +362,7 @@ describe( 'the graph’s paint', () => {
 				expect( stroke( 'is-lit' ) ).toBe( tokenOf( slug, '--cyan' ) );
 			} );
 
-			it( 'paints the selected chip as an active button, and any other as its badge', () => {
+			it( 'paints a chip as its badge', () => {
 				const paintOf = ( names ) =>
 					[ 'background-color', 'color' ].map( ( longhand ) =>
 						skinned(
@@ -352,13 +375,12 @@ describe( 'the graph’s paint', () => {
 					);
 				const pill =
 					'newspack-nodes-status-badge is-pill is-info newspack-intelligence__pill';
-				const active = paintOf( 'button is-active' );
-				active.forEach( ( one ) => expect( one ).toBeTruthy() );
-				expect( paintOf( `${ pill } is-active` ) ).toEqual( active );
+				paintOf( pill ).forEach( ( one ) =>
+					expect( one ).toBeTruthy()
+				);
 				expect( paintOf( pill ) ).toEqual(
 					paintOf( 'newspack-nodes-status-badge is-info' )
 				);
-				expect( paintOf( pill ) ).not.toEqual( active );
 			} );
 		}
 	);

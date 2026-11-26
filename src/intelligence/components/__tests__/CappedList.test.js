@@ -2,7 +2,7 @@
 /**
  * A capped list shows its first `limit` rows under the class it is given,
  * else the facts list's, and offers "Show %d more" for the rest it holds. A
- * caller may keep a row past the limit, and may hold whether all are shown.
+ * caller may hold whether all are shown.
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -54,15 +54,5 @@ describe( 'CappedList', () => {
 		unmount();
 		list( { all: true, onAll } );
 		expect( screen.getAllByRole( 'listitem' ) ).toHaveLength( 6 );
-	} );
-
-	it( 'keeps a row past its limit in its place, and counts it as shown', () => {
-		list( { keep: ( row ) => 'dunlin' === row } );
-		expect(
-			screen.getAllByRole( 'listitem' ).map( ( one ) => one.textContent )
-		).toEqual( [ 'kestrel', 'heron', 'plover', 'avocet', 'dunlin' ] );
-		expect(
-			screen.getByRole( 'button', { name: 'Show 1 more' } )
-		).toBeInTheDocument();
 	} );
 } );

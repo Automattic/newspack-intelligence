@@ -1,10 +1,11 @@
 /**
  * The entity graph as the shared force graph draws it: what the `graph`
- * command answered as nodes and lines, and the classes a selection lights and
- * dims them by.
+ * command answered as nodes and lines, each entity a circle holding how many
+ * items are about it.
  */
 
-import { entityName, itemsPhrase, metaLine } from './format';
+import { circleSize } from '@newspack-nodes/shared/forceGraph';
+import { entityName, itemsPhrase, metaLine, pageFormat } from './format';
 import { word, words } from './words';
 
 /** @typedef {import('@newspack-nodes/shared/forceGraph/ForceGraph').GraphNode} GraphNode */
@@ -43,19 +44,28 @@ export const labelOf = ( { name, key } ) =>
 	entityName( { name, entity_key: key } );
 
 /**
+ * What an entity is, in words: its type, then its open roles.
+ *
+ * @param {GraphEntity} entity The entity.
+ * @return {string} The line.
+ */
+export const aboutLine = ( entity ) =>
+	metaLine(
+		word( 'typeWords', entity.type ),
+		...entity.roles.map( ( role ) => word( 'roleWords', role ) )
+	);
+
+/**
  * An entity's tooltip: its label, then its type, roles and items.
  *
  * @param {GraphEntity} entity The entity.
  * @return {string} The tooltip.
  */
-const titleOf = ( entity ) => {
-	const line = metaLine(
-		word( 'typeWords', entity.type ),
-		...entity.roles.map( ( role ) => word( 'roleWords', role ) ),
+const titleOf = ( entity ) =>
+	`${ labelOf( entity ) }\n${ metaLine(
+		aboutLine( entity ),
 		itemsPhrase( entity.items )
-	);
-	return `${ labelOf( entity ) }\n${ line }`;
-};
+	) }`;
 
 /**
  * The part of the answer naming entities of some types, and the pairs among
@@ -92,8 +102,10 @@ const JOINED_CHARGE = -6000;
 
 /**
  * The answer as the force graph draws it: every entity, colored by its
- * type's place in the vocabulary, and a line for each pair sharing at least
- * `minShared` items, pulling less the more lines its less joined end has.
+ * type's place in the vocabulary, a circle sized by its share of the most
+ * items any entity drawn holds and holding its count in the page's language,
+ * and a line for each pair sharing at least `minShared` items, pulling less
+ * the more lines its less joined end has.
  *
  * @param {GraphAnswer} answer            What `graph` answered.
  * @param {Object}      options
@@ -107,12 +119,19 @@ export function toEntityGraph( { entities, pairs }, { minShared } ) {
 	for ( const place of drawn.flatMap( ( [ a, b ] ) => [ a, b ] ) ) {
 		joins.set( place, ( joins.get( place ) ?? 0 ) + 1 );
 	}
+	const most = entities.reduce(
+		( high, { items } ) => Math.max( high, items ),
+		0
+	);
+	const count = pageFormat( Intl.NumberFormat );
 	const nodes = entities.map( ( entity, place ) => ( {
 		id: entity.key,
 		label: labelOf( entity ),
 		className: `is-type-${ types.indexOf( entity.type ) + 1 }`,
 		title: titleOf( entity ),
 		charge: joins.has( place ) ? JOINED_CHARGE : undefined,
+		size: circleSize( entity.items, most ),
+		detail: count.format( entity.items ),
 	} ) );
 	const links = drawn.map( ( [ a, b, shared ] ) => {
 		const [ source, target ] = [ entities[ a ].key, entities[ b ].key ];
@@ -126,36 +145,4 @@ export function toEntityGraph( { entities, pairs }, { minShared } ) {
 		};
 	} );
 	return { nodes, links };
-}
-
-/**
- * The graph with an entity's lines and what they reach lit, the rest dimmed.
- *
- * @param {EntityGraph} graph    The graph.
- * @param {?string}     selected The entity's key, or null to light none.
- * @return {EntityGraph} The graph it was handed, for null.
- */
-export function lightGraph( graph, selected ) {
-	if ( null === selected ) {
-		return graph;
-	}
-	const touches = ( { source, target } ) =>
-		selected === source || selected === target;
-	const lit = new Set( [
-		selected,
-		...graph.links
-			.filter( touches )
-			.flatMap( ( { source, target } ) => [ source, target ] ),
-	] );
-	const shade = ( on ) => ( on ? 'is-lit' : 'is-dimmed' );
-	return {
-		nodes: graph.nodes.map( ( node ) => ( {
-			...node,
-			className: `${ node.className } ${ shade( lit.has( node.id ) ) }`,
-		} ) ),
-		links: graph.links.map( ( link ) => ( {
-			...link,
-			className: shade( touches( link ) ),
-		} ) ),
-	};
 }

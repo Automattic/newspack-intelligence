@@ -2,11 +2,13 @@
 /**
  * The `graph` answer as the force graph draws it: a node for every entity
  * whatever the least shared, a line for each pair sharing at least that many,
- * no hull, and what a selection lights.
+ * no hull, each entity a circle holding its item count, and what the shared
+ * lighting makes of a selection.
  */
 
+import { lightGraph } from '@newspack-nodes/shared/forceGraph';
 import { pageData, VOCABULARY } from '../../views/__tests__/fixtures';
-import { lightGraph, ofTypes, toEntityGraph } from '../entityGraph';
+import { ofTypes, toEntityGraph } from '../entityGraph';
 
 /** Four entities, one holding no name and no role, and the pairs they share. */
 const ANSWER = {
@@ -56,8 +58,18 @@ const TYPE = Object.fromEntries(
 	] )
 );
 
+/**
+ * A circle's size for a share of the most items.
+ *
+ * @param {number} items Its items.
+ * @param {number} most  The most any entity drawn holds.
+ * @return {number} Its size.
+ */
+const sized = ( items, most ) => 10 + 20 * Math.sqrt( items / most );
+
 beforeEach( () => {
 	window.NewspackNodesData = pageData();
+	document.documentElement.lang = '';
 } );
 
 describe( 'ofTypes', () => {
@@ -83,6 +95,8 @@ describe( 'toEntityGraph', () => {
 				className: TYPE.organization,
 				title: 'Harbor Ledger\nOutfit, Rival, Lapsed member, 31 items',
 				charge: -6000,
+				size: 30,
+				detail: '31',
 			},
 			{
 				id: 'person:ida-marsh',
@@ -90,6 +104,8 @@ describe( 'toEntityGraph', () => {
 				className: TYPE.person,
 				title: 'person:ida-marsh\nHuman, 12 items',
 				charge: -6000,
+				size: sized( 12, 31 ),
+				detail: '12',
 			},
 			{
 				id: 'organization:prairie-signal',
@@ -97,6 +113,8 @@ describe( 'toEntityGraph', () => {
 				className: TYPE.organization,
 				title: 'Prairie Signal\nOutfit, Lapsed member, 7 items',
 				charge: -6000,
+				size: sized( 7, 31 ),
+				detail: '7',
 			},
 			{
 				id: 'event:gull-summit',
@@ -104,8 +122,36 @@ describe( 'toEntityGraph', () => {
 				className: TYPE.event,
 				title: 'Gull Summit\nHappening, 1 item',
 				charge: undefined,
+				size: sized( 1, 31 ),
+				detail: '1',
 			},
 		] );
+	} );
+
+	it( 'sizes each circle by the most items an entity it draws holds', () => {
+		const part = ofTypes( ANSWER, [ 'organization', 'event' ] );
+		expect(
+			toEntityGraph( part, { minShared: 9 } ).nodes.map(
+				( { size } ) => size
+			)
+		).toEqual( [ 30, sized( 7, 31 ), sized( 1, 31 ) ] );
+		const small = ofTypes( ANSWER, [ 'person', 'event' ] );
+		expect(
+			toEntityGraph( small, { minShared: 9 } ).nodes.map(
+				( { size } ) => size
+			)
+		).toEqual( [ 30, sized( 1, 12 ) ] );
+	} );
+
+	it( 'writes an item count in the page’s own language', () => {
+		document.documentElement.lang = 'de';
+		const many = {
+			entities: [ { ...ANSWER.entities[ 0 ], items: 48213 } ],
+			pairs: [],
+		};
+		expect(
+			toEntityGraph( many, { minShared: 9 } ).nodes[ 0 ].detail
+		).toBe( '48.213' );
 	} );
 
 	it( 'gives each type a color of its own', () => {
@@ -201,18 +247,13 @@ describe( 'toEntityGraph', () => {
 	} );
 } );
 
-describe( 'lightGraph', () => {
+describe( 'the shared lighting', () => {
 	const classesOf = ( list ) =>
 		Object.fromEntries(
 			list.map( ( { id, className } ) => [ id, className ] )
 		);
 
-	it( 'leaves the graph as it is with nothing selected', () => {
-		const graph = toEntityGraph( ANSWER, { minShared: 9 } );
-		expect( lightGraph( graph, null ) ).toBe( graph );
-	} );
-
-	it( 'lights the entity, its lines and what they reach, and dims the rest', () => {
+	it( 'keeps each entity’s type color beside what a selection lights', () => {
 		const graph = toEntityGraph( ANSWER, { minShared: 9 } );
 		const lit = lightGraph( graph, 'organization:prairie-signal' );
 		expect( classesOf( lit.nodes ) ).toEqual( {
@@ -225,33 +266,20 @@ describe( 'lightGraph', () => {
 			'is-dimmed',
 			'is-lit',
 		] );
-		expect( Object.keys( lit ) ).toEqual( [ 'nodes', 'links' ] );
 	} );
 
-	it( 'lights a line from either of its ends', () => {
-		const { links } = lightGraph(
-			toEntityGraph( ANSWER, { minShared: 8 } ),
-			'organization:harbor-ledger'
-		);
-		expect( links.map( ( { className } ) => className ) ).toEqual( [
-			'is-lit',
-			'is-lit',
-			'is-dimmed',
-		] );
-	} );
-
-	it( 'lights an entity no line reaches alone', () => {
+	it( 'keeps each circle’s size and count', () => {
 		const lit = lightGraph(
 			toEntityGraph( ANSWER, { minShared: 9 } ),
 			'event:gull-summit'
 		);
 		expect(
-			lit.nodes
-				.filter( ( { className } ) => / is-lit$/.test( className ) )
-				.map( ( { id } ) => id )
-		).toEqual( [ 'event:gull-summit' ] );
-		expect(
-			lit.links.every( ( { className } ) => 'is-dimmed' === className )
-		).toBe( true );
+			lit.nodes.map( ( { size, detail } ) => [ size, detail ] )
+		).toEqual( [
+			[ 30, '31' ],
+			[ sized( 12, 31 ), '12' ],
+			[ sized( 7, 31 ), '7' ],
+			[ sized( 1, 31 ), '1' ],
+		] );
 	} );
 } );
