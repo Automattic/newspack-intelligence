@@ -1,7 +1,7 @@
 /**
- * The `related` block: the entities sharing the most items with the
- * profile's entity, each opening its own profile with how many it shares, at most
- * `limit` until the rest are asked for.
+ * The `related` block: the entities `related` ranks beside the profile's
+ * entity, each opening its own profile with how many items it shares, at
+ * most `limit` until the rest are asked for.
  */
 
 import { RangeControl, TextControl } from '@wordpress/components';
@@ -45,7 +45,7 @@ function Rows( { entities, limit } ) {
 					/>
 					<span className="newspack-intelligence__count">
 						{ sprintf(
-							/* translators: %d: items both entities link. */
+							/* translators: %d: items about one entity that name the other. */
 							__( '%d shared', 'newspack-intelligence' ),
 							other.shared_items
 						) }

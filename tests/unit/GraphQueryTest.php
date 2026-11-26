@@ -574,9 +574,10 @@ final class GraphQueryTest extends TestCase {
 
 	/**
 	 * The graph answers each accepted entity a readable item names, the one
-	 * with the most items first, and each pair sharing one, the most shared
-	 * first and then by key, as places in the entities; an entity sharing
-	 * nothing is answered too.
+	 * with the most items first, and each pair sharing an item about one of
+	 * them, the most shared first and then by key, as places in the
+	 * entities, so two an item only mentions share nothing; an entity
+	 * sharing nothing is answered too.
 	 */
 	public function test_the_graph_answers_every_accepted_entity_and_the_items_each_pair_shares(): void {
 		$this->seed_graph();
@@ -589,7 +590,7 @@ final class GraphQueryTest extends TestCase {
 					[ 'key' => self::LEDGER, 'name' => 'Salem Ledger', 'type' => 'organization', 'roles' => [], 'items' => 6 ],
 					[ 'key' => 'product:tern-relay', 'name' => 'Tern Relay', 'type' => 'product', 'roles' => [], 'items' => 2 ],
 				],
-				'pairs'     => [ [ 0, 1, 7 ], [ 0, 2, 3 ], [ 1, 2, 3 ] ],
+				'pairs'     => [ [ 0, 1, 7 ], [ 0, 2, 3 ] ],
 				'available' => true,
 			],
 			self::read( 'graph_of', [] )
@@ -598,10 +599,12 @@ final class GraphQueryTest extends TestCase {
 
 	/**
 	 * A pair joins an entity and one its `related` list holds, and no other:
-	 * of 23 entities an item names together, each lists the 20 before it or
-	 * first, so the last three never join. Topics stand in the lists, and so
-	 * does an entity not accepted yet, which the graph answers with them, while
-	 * a list of its own joins nothing: one no accepted entity lists is left out.
+	 * a survey naming 23 entities, the first its subject, joins the first to
+	 * each of the rest and no two of the rest, and the first's list of 20
+	 * cuts the proposed product the survey also names. Topics stand in the
+	 * lists, and so does an entity not accepted yet, which the graph answers
+	 * with them, while a list of its own joins nothing: one no accepted
+	 * entity lists is left out.
 	 */
 	public function test_the_graph_joins_each_entity_to_its_related_list_alone(): void {
 		$keys = \array_map( static fn ( int $n ): string => \sprintf( 'place:cove-%02d', $n ), \range( 0, 22 ) );
@@ -621,12 +624,7 @@ final class GraphQueryTest extends TestCase {
 		);
 
 		$answer = self::read( 'graph_of', [] );
-		$drawn  = [];
-		foreach ( $answer['pairs'] as [ $a, $b, $shared ] ) {
-			$pair = [ $answer['entities'][ $a ]['key'], $answer['entities'][ $b ]['key'] ];
-			\sort( $pair );
-			$drawn[ \implode( ' ', $pair ) ] = $shared;
-		}
+		$drawn  = self::drawn( $answer );
 		$listed = [];
 		foreach ( [ ...$keys, 'topic:tides' ] as $key ) {
 			foreach ( self::read( 'related', [ 'key' => $key ] )['entities'] as $other ) {
@@ -635,16 +633,138 @@ final class GraphQueryTest extends TestCase {
 				$listed[ \implode( ' ', $pair ) ] = $other['shared_items'];
 			}
 		}
-		\ksort( $drawn );
 		\ksort( $listed );
 
 		$this->assertSame( $listed, $drawn );
+		$this->assertSame( 1, $drawn["{$keys[0]} {$keys[21]}"] );
 		$this->assertSame( 2, $drawn["organization:hidden-buyer {$keys[22]}"] );
 		$this->assertSame( 2, $drawn["{$keys[22]} topic:tides"] );
 		$this->assertArrayNotHasKey( "{$keys[18]} {$keys[22]}", $drawn );
 		$this->assertArrayNotHasKey( "{$keys[20]} {$keys[21]}", $drawn );
 		$this->assertSame( [], \array_intersect( [ 'product:zinc', 'product:zirconium' ], \array_column( $answer['entities'], 'key' ) ) );
 		$this->assertSame( 2, \array_column( $answer['entities'], 'items', 'key' )['organization:hidden-buyer'] );
+	}
+
+	/**
+	 * An item counts toward a pair only when one of the two is its subject:
+	 * a roster naming both as mentions relates neither to the other, in
+	 * Related and in the graph alike, while it still relates each to its
+	 * subject, and an item about one that mentions the other relates them.
+	 */
+	public function test_an_item_only_mentioning_both_entities_relates_neither(): void {
+		$tide    = 'organization:tidewater-post';
+		$kestrel = 'organization:kestrel-weekly';
+		$desk    = 'product:roster-desk';
+		$this->seed(
+			self::entity( $tide, 'Tidewater Post' ),
+			self::entity( $kestrel, 'Kestrel Weekly' ),
+			self::entity( $desk, 'Roster Desk' ),
+			self::naming( 'roster', 3, self::$oct_06, 'public', $desk, $tide, $kestrel ),
+			self::naming( 'pact', 1, self::$oct_13, 'public', $tide, $kestrel ),
+			self::item( 'feed:aside-0', 'Item aside 0', 'feed', 'public', self::$oct_13 ),
+			self::link( 'link_asserted', 'feed:aside-0', $tide, 'mention', 'name', 1.0, self::$oct_13 ),
+			self::link( 'link_asserted', 'feed:aside-0', $kestrel, 'mention', 'name', 1.0, self::$oct_13 )
+		);
+
+		$this->assertSame( [ $desk => 3, $tide => 1 ], \array_column( self::read( 'related', [ 'key' => $kestrel ] )['entities'], 'shared_items', 'entity_key' ) );
+		$this->assertSame( [ "{$kestrel} {$tide}" => 1, "{$kestrel} {$desk}" => 3, "{$tide} {$desk}" => 3 ], self::drawn( self::read( 'graph_of', [] ) ) );
+	}
+
+	/**
+	 * Related ranks by how much more two entities share than their sizes
+	 * predict, shared items over the items about either: a partner sharing
+	 * two of its two items ranks above a hub sharing three of its 23.
+	 */
+	public function test_related_ranks_a_specific_partner_above_a_busier_hub(): void {
+		$osprey  = 'organization:osprey-daily';
+		$fern    = 'organization:fern-gazette';
+		$lantern = 'product:lantern-cms';
+		$this->seed(
+			self::entity( $osprey, 'Osprey Daily' ),
+			self::entity( $fern, 'Fern Gazette' ),
+			self::entity( $lantern, 'Lantern CMS' ),
+			self::naming( 'hub', 3, self::$oct_06, 'public', $osprey, $lantern ),
+			self::naming( 'busy', 20, self::$oct_06, 'public', $lantern ),
+			self::naming( 'fern', 2, self::$oct_13, 'public', $osprey, $fern )
+		);
+
+		$this->assertSame( [ $fern => 2, $lantern => 3 ], \array_column( self::read( 'related', [ 'key' => $osprey ] )['entities'], 'shared_items', 'entity_key' ) );
+	}
+
+	/**
+	 * A partner's size counts the items of every key merged into it, those
+	 * sharing nothing with the entity among them: a partner whose merged
+	 * key is about three more items ranks below one about nothing else.
+	 */
+	public function test_related_sizes_a_partner_by_its_merged_keys(): void {
+		$osprey  = 'organization:osprey-daily';
+		$fern    = 'organization:fern-gazette';
+		$lantern = 'product:lantern-cms';
+		$this->seed(
+			self::entity( $osprey, 'Osprey Daily' ),
+			self::entity( $fern, 'Fern Gazette' ),
+			self::entity( 'organization:old-fern', 'Old Fern' ),
+			self::entity( $lantern, 'Lantern CMS' ),
+			self::naming( 'fern', 1, self::$oct_13, 'public', $osprey, $fern ),
+			self::naming( 'lamp', 1, self::$oct_13, 'public', $osprey, $lantern ),
+			self::naming( 'past', 3, self::$oct_06, 'public', 'organization:old-fern' ),
+			self::merged( 'organization:old-fern', $fern )
+		);
+
+		$this->assertSame( [ $lantern, $fern ], \array_column( self::read( 'related', [ 'key' => $osprey ] )['entities'], 'entity_key' ) );
+	}
+
+	/**
+	 * A partner's size counts only the items it is about that the caller
+	 * reads, by links no judgment rejects: a partner whose other four items
+	 * are two rejected, one excluded and one restricted is about the one it
+	 * shares alone, so it ranks above one about one more public item, which
+	 * any of those four counted would tie and the key order put first.
+	 */
+	public function test_related_sizes_a_partner_by_its_readable_live_links_alone(): void {
+		$osprey = 'organization:osprey-daily';
+		$fern   = 'organization:fern-gazette';
+		$amber  = 'organization:amber-post';
+		$this->seed(
+			self::entity( $osprey, 'Osprey Daily' ),
+			self::entity( $fern, 'Fern Gazette' ),
+			self::entity( $amber, 'Amber Post' ),
+			self::naming( 'fern', 1, self::$oct_13, 'public', $osprey, $fern ),
+			self::naming( 'lamp', 1, self::$oct_13, 'public', $osprey, $amber ),
+			self::naming( 'glow', 1, self::$oct_06, 'public', $amber ),
+			self::naming( 'spurned', 2, self::$oct_06, 'public', $fern ),
+			self::judged( 'link_rejected', 'feed:spurned-0', $fern, 'user:41' ),
+			self::judged( 'link_rejected', 'feed:spurned-1', $fern, 'user:41' ),
+			self::naming( 'shelved', 1, self::$oct_06, 'internal', $fern ),
+			self::naming( 'deal', 1, self::$oct_06, 'restricted', $fern ),
+			[ Intel_Event::make( 'item_excluded', [ 'item_key' => 'feed:shelved-0', 'url' => self::url( 'feed:shelved-0' ), 'title' => 'Shelved', 'tier' => 'internal' ], 'user:41', 'fixture-9' ) ]
+		);
+
+		$this->assertSame( [ $fern, $amber ], \array_column( self::read( 'related', [ 'key' => $osprey ] )['entities'], 'entity_key' ) );
+	}
+
+	/**
+	 * The graph keeps each entity's RELATED_LIMIT partners in the order
+	 * Related lists them: twenty partners sharing one item apiece outrank a
+	 * hub sharing two of its 32, so the hub is cut from the graph and is
+	 * the twenty-first Related lists.
+	 */
+	public function test_the_graph_cuts_each_list_in_relateds_order(): void {
+		$osprey  = 'organization:osprey-daily';
+		$lantern = 'product:lantern-cms';
+		$fens    = \array_map( static fn ( int $n ): string => \sprintf( 'organization:fen-%02d', $n ), \range( 0, 19 ) );
+		$events  = [ self::entity( $osprey, 'Osprey Daily' ), self::proposed( $lantern, 'Lantern CMS' ) ];
+		foreach ( $fens as $n => $fen ) {
+			\array_push( $events, self::proposed( $fen, "Fen {$n}" ), self::naming( "fen{$n}", 1, self::$oct_13, 'public', $osprey, $fen ) );
+		}
+		$this->seed( ...$events, ...[ self::naming( 'hub', 2, self::$oct_06, 'public', $osprey, $lantern ), self::naming( 'lone', 30, self::$oct_06, 'public', $lantern ) ] );
+
+		$answer = self::read( 'graph_of', [] );
+
+		$this->assertSame( \array_fill_keys( \array_map( static fn ( string $fen ): string => "{$fen} {$osprey}", $fens ), 1 ), self::drawn( $answer ) );
+		$this->assertNotContains( $lantern, \array_column( $answer['entities'], 'key' ) );
+		$this->assertSame( [ ...$fens, $lantern ], \array_column( self::read( 'related', [ 'key' => $osprey, 'limit' => 21 ] )['entities'], 'entity_key' ) );
+		$this->assertSame( $fens, \array_column( self::read( 'related', [ 'key' => $osprey, 'limit' => 20 ] )['entities'], 'entity_key' ) );
 	}
 
 	/** A proposed entity an accepted one shares nothing with, a rejected judgment, an excluded item and an item above the caller's tier add neither an entity, a count nor a pair. */
@@ -716,13 +836,13 @@ final class GraphQueryTest extends TestCase {
 		$answer = self::read( 'graph_of', [] );
 
 		$this->assertSame( [ self::GAZETTE => 20, self::HARBOR => 10, self::LEDGER => 6, 'product:tern-relay' => 5, 'organization:spurned-wire' => 4 ], \array_column( $answer['entities'], 'items', 'key' ) );
-		$this->assertSame( [ [ 0, 1, 7 ], [ 0, 4, 4 ], [ 0, 2, 3 ], [ 0, 3, 3 ], [ 1, 2, 3 ] ], $answer['pairs'] );
+		$this->assertSame( [ [ 0, 1, 7 ], [ 0, 4, 4 ], [ 0, 2, 3 ], [ 0, 3, 3 ] ], $answer['pairs'] );
 	}
 
 	/**
 	 * A topic link counts as any about-link does, an item linking a topic as
 	 * its topic and as a mention counts once, and a publisher link does not
-	 * count.
+	 * count; the topic pairs with each item's subject alone.
 	 */
 	public function test_the_graph_reads_topic_links_as_related_does(): void {
 		$this->seed_graph();
@@ -737,7 +857,7 @@ final class GraphQueryTest extends TestCase {
 		$answer = self::read( 'graph_of', [] );
 
 		$this->assertSame( [ self::GAZETTE => 13, self::HARBOR => 10, self::LEDGER => 6, 'topic:ai' => 3, 'product:tern-relay' => 2 ], \array_column( $answer['entities'], 'items', 'key' ) );
-		$this->assertSame( [ [ 0, 1, 7 ], [ 0, 2, 3 ], [ 0, 3, 3 ], [ 1, 2, 3 ], [ 1, 3, 3 ], [ 2, 3, 3 ] ], $answer['pairs'] );
+		$this->assertSame( [ [ 0, 1, 7 ], [ 0, 2, 3 ], [ 0, 3, 3 ] ], $answer['pairs'] );
 	}
 
 	/** An entity's roles are the open ones of its keys, in the order the roles are declared, former client last. */
@@ -769,6 +889,33 @@ final class GraphQueryTest extends TestCase {
 		$linking = \array_filter( $this->queries_of( static fn () => self::read( 'graph_of', [] ) ), static fn ( string $sql ): bool => \str_contains( $sql, '.links' ) );
 
 		$this->assertCount( 1, $linking );
+	}
+
+	/**
+	 * Related and the graph size each entity off the judged links `live`
+	 * would pick from, read once into `linked`, and neither defines `live`,
+	 * since a count needs no pick. Related sizes the partners its pairs name
+	 * off the links index alone, by `entity_key` and role, and each item's
+	 * tier off the items index alone, so its cost follows those partners'
+	 * links, never fetches a link's row to count it and never scans the
+	 * links.
+	 */
+	public function test_related_and_the_graph_size_entities_without_the_pick(): void {
+		$this->seed_graph();
+		$db = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+		$plans = [];
+		foreach ( [ 'related' => [ 'key' => self::GAZETTE ], 'graph_of' => [] ] as $verb => $args ) {
+			$linking        = \array_values( \array_filter( $this->queries_of( static fn () => self::read( $verb, $args ) ), static fn ( string $sql ): bool => \str_contains( $sql, '.links' ) ) );
+			$plans[ $verb ] = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $linking[0] )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+			$this->assertStringNotContainsString( ' live AS ', $linking[0], $verb );
+			$this->assertSame( 1, \preg_match_all( '/^MATERIALIZE linked$/m', $plans[ $verb ] ), $plans[ $verb ] );
+		}
+
+		$this->assertDoesNotMatchRegularExpression( '/^SCAN p0\.links\b/m', $plans['related'] );
+		$this->assertMatchesRegularExpression( '/^SEARCH p0\.links USING COVERING INDEX links_entity_key \(entity_key=\? AND role=\?\)$/m', $plans['related'] );
+		$this->assertDoesNotMatchRegularExpression( '/^SEARCH p0\.links USING INTEGER PRIMARY KEY\b/m', $plans['related'] );
+		$this->assertMatchesRegularExpression( '/^SEARCH p0\.items USING COVERING INDEX items_item_tier \(item_key=\? AND tier=\?\)$/m', $plans['related'] );
 	}
 
 	/** The accepted entities are a list the links are tested against, never an outer loop walking every link once an entity. */
@@ -1792,6 +1939,24 @@ final class GraphQueryTest extends TestCase {
 			'linear:joint-grant'   => 'Gazette and Ledger share a grant',
 		];
 		return \array_map( static fn ( string $key ): array => [ 'item_key' => $key, 'url' => self::url( $key ), 'title' => $titles[ $key ] ], $keys );
+	}
+
+	/**
+	 * A graph answer's pairs, each its two keys in order joined by a space
+	 * => how many items they share, sorted by those keys.
+	 *
+	 * @param array<string,mixed> $answer A graph answer.
+	 * @return array<string,int>
+	 */
+	private static function drawn( array $answer ): array {
+		$drawn = [];
+		foreach ( $answer['pairs'] as [ $a, $b, $shared ] ) {
+			$pair = [ $answer['entities'][ $a ]['key'], $answer['entities'][ $b ]['key'] ];
+			\sort( $pair );
+			$drawn[ \implode( ' ', $pair ) ] = $shared;
+		}
+		\ksort( $drawn );
+		return $drawn;
 	}
 
 	/**

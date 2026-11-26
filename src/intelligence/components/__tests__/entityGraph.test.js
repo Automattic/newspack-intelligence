@@ -233,20 +233,15 @@ describe( 'toEntityGraph', () => {
 		expect( links ).toEqual( [] );
 	} );
 
-	it( 'pulls a line less the more lines its less joined end has, and far', () => {
+	it( 'pulls a line far, leaving its strength to the graph’s default', () => {
 		const pullOf = ( minShared ) =>
 			toEntityGraph( ANSWER, { minShared } ).links.map(
 				( { strength, distance } ) => [ strength, distance ]
 			);
-		expect( pullOf( 23 ) ).toEqual( [ [ 1, 600 ] ] );
 		expect( pullOf( 8 ) ).toEqual( [
-			[ 1 / 2, 600 ],
-			[ 1 / 2, 600 ],
-			[ 1 / 2, 600 ],
-		] );
-		expect( pullOf( 9 ) ).toEqual( [
-			[ 1, 600 ],
-			[ 1, 600 ],
+			[ undefined, 600 ],
+			[ undefined, 600 ],
+			[ undefined, 600 ],
 		] );
 	} );
 

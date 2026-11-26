@@ -184,6 +184,7 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'items_title_norm'    => [ 'title_norm' ],
 					'items_retrieved_day' => [ 'retrieved_day' ],
 					'items_item_time'     => [ 'item_time' ],
+					'items_item_tier'     => [ 'item_key', 'tier' ],
 				],
 				'autoincrement' => 'id',
 				'fts'           => [ 'title', 'body' ],
@@ -251,7 +252,7 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				],
 				'key'     => [ 'item_key', 'entity_key', 'role' ],
 				'indexes' => [
-					'links_entity_key' => [ 'entity_key' ],
+					'links_entity_key' => [ 'entity_key', 'role', 'item_key', 'state' ],
 					'links_item_day' => [ 'item_day' ],
 				],
 				'retain'  => [ 'item_day', self::RETAIN_DAYS, self::DAY_SECONDS ],
@@ -736,6 +737,6 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @api Read by the Row_Table that opens the file.
 	 */
 	public static function version(): int {
-		return 12;
+		return 13;
 	}
 }

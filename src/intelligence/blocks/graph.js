@@ -272,22 +272,33 @@ const EntityList = memo( function EntityList( {
 } );
 
 /**
- * The entities a drawn line joins an entity to, the most shared first.
+ * The entities a drawn line joins an entity to, in the order `related`
+ * ranks them: the items they share over the items about either, then the
+ * items they share, then by key.
  *
  * @param {EntityGraph}   graph    The graph drawn.
  * @param {GraphEntity[]} entities The entities it draws.
  * @param {string}        key      The entity's key.
- * @return {Array<{entity: GraphEntity, shared: number}>} Each, with the items both are about.
+ * @return {Array<{entity: GraphEntity, shared: number}>} Each, with the items it shares.
  */
 function relatedOf( graph, entities, key ) {
 	const byKey = new Map( entities.map( ( one ) => [ one.key, one ] ) );
+	const items = byKey.get( key ).items;
+	const score = ( { entity, shared } ) =>
+		shared / ( items + entity.items - shared );
 	return graph.links
 		.filter( ( { source, target } ) => key === source || key === target )
 		.map( ( { source, target, weight } ) => ( {
 			entity: byKey.get( key === source ? target : source ),
 			shared: weight,
 		} ) )
-		.sort( ( one, two ) => two.shared - one.shared );
+		.sort(
+			( one, two ) =>
+				score( two ) - score( one ) ||
+				two.shared - one.shared ||
+				Number( one.entity.key > two.entity.key ) -
+					Number( one.entity.key < two.entity.key )
+		);
 }
 
 /**

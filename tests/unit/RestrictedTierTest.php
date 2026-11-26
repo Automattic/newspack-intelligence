@@ -143,12 +143,12 @@ final class RestrictedTierTest extends TestCase {
 		$GLOBALS['_current_user_id'] = self::HOLDER;
 		$all                         = $this->ci->dispatch( 'graph', [] );
 		$this->assertSame( [ self::GAZETTE => 3, 'topic:awards' => 3, 'organization:salem-ledger' => 2, 'organization:quiet-partner' => 1, 'topic:ai' => 1 ], \array_column( $all['entities'], 'items', 'key' ) );
-		$this->assertSame( [ [ 0, 1, 3 ], [ 0, 3, 1 ], [ 0, 2, 1 ], [ 3, 1, 1 ], [ 2, 4, 1 ], [ 2, 1, 1 ] ], $all['pairs'] );
+		$this->assertSame( [ [ 0, 1, 3 ], [ 0, 3, 1 ], [ 0, 2, 1 ], [ 2, 4, 1 ] ], $all['pairs'] );
 
 		$GLOBALS['_current_user_id'] = self::READER;
 		$all                         = $this->ci->dispatch( 'graph', [] );
 		$this->assertSame( [ self::GAZETTE => 2, 'organization:salem-ledger' => 2, 'topic:awards' => 2, 'topic:ai' => 1 ], \array_column( $all['entities'], 'items', 'key' ) );
-		$this->assertSame( [ [ 0, 2, 2 ], [ 0, 1, 1 ], [ 1, 3, 1 ], [ 1, 2, 1 ] ], $all['pairs'] );
+		$this->assertSame( [ [ 0, 2, 2 ], [ 0, 1, 1 ], [ 1, 3, 1 ] ], $all['pairs'] );
 	}
 
 	/**

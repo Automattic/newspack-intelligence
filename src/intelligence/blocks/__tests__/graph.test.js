@@ -751,7 +751,7 @@ describe( 'the inspector', () => {
 		);
 	} );
 
-	it( 'lists the entities its drawn lines reach, the most shared first', async () => {
+	it( 'lists the entities its drawn lines reach', async () => {
 		wire.replies.graph = {
 			...ANSWER,
 			pairs: [
@@ -776,6 +776,54 @@ describe( 'the inspector', () => {
 		fireEvent.click( screen.getByRole( 'checkbox', { name: 'Human' } ) );
 		expect( relatedOf( 'Harbor Ledger' ) ).toEqual( [
 			[ 'Gull Summit', '14 shared' ],
+		] );
+	} );
+
+	it( 'lists them as Related ranks them: by the items shared over the items about either, then by the items shared', async () => {
+		wire.replies.graph = {
+			...ANSWER,
+			entities: [
+				{ ...ANSWER.entities[ 0 ], items: 31 },
+				{ ...ANSWER.entities[ 1 ], items: 35 },
+				{ ...ANSWER.entities[ 2 ], items: 3 },
+				{ ...ANSWER.entities[ 3 ], items: 2 },
+			],
+			pairs: [
+				[ 0, 1, 4 ],
+				[ 2, 0, 3 ],
+				[ 0, 3, 2 ],
+			],
+		};
+		await open( 1 );
+		press( node( HARBOR ) );
+		expect( relatedOf( 'Harbor Ledger' ) ).toEqual( [
+			[ 'Prairie Signal', '3 shared' ],
+			[ 'Ida Marsh', '4 shared' ],
+			[ 'Gull Summit', '2 shared' ],
+		] );
+	} );
+
+	it( 'lists two it ranks alike by key', async () => {
+		wire.replies.graph = {
+			...ANSWER,
+			entities: [
+				{ ...ANSWER.entities[ 0 ], items: 31 },
+				{ ...ANSWER.entities[ 1 ], items: 2 },
+				{ ...ANSWER.entities[ 2 ], items: 9 },
+				{ ...ANSWER.entities[ 3 ], items: 2 },
+			],
+			pairs: [
+				[ 0, 1, 2 ],
+				[ 0, 2, 1 ],
+				[ 0, 3, 2 ],
+			],
+		};
+		await open( 1 );
+		press( node( HARBOR ) );
+		expect( relatedOf( 'Harbor Ledger' ) ).toEqual( [
+			[ 'Gull Summit', '2 shared' ],
+			[ 'Ida Marsh', '2 shared' ],
+			[ 'Prairie Signal', '1 shared' ],
 		] );
 	} );
 

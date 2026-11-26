@@ -68,6 +68,15 @@ final class Graph_Query {
 	/** Entities `related` answers when its caller does not name a limit. */
 	public const RELATED_LIMIT = 20;
 
+	/**
+	 * The CTEs, after `judged()`'s, that relate entities by: `linked`, the
+	 * links `live` would pick from, read once, since a count needs no pick;
+	 * and `about`, one row per item and survivor, `subject` whether a live
+	 * link names it the item's subject, as `live`'s pick prefers a subject.
+	 */
+	private const ABOUT = "linked AS MATERIALIZED ( SELECT item_key, entity_key, role FROM lj WHERE state <> 'rejected' ),"
+		. " about AS MATERIALIZED ( SELECT item_key, entity_key, MAX( role = 'subject' ) AS subject FROM linked GROUP BY item_key, entity_key )";
+
 	/** The most rows any command answers. */
 	public const MAX_LIMIT = 200;
 
@@ -1303,9 +1312,17 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The entities sharing the most readable items with one, each with how
-	 * many it shares and the newest it shares as citations, each its key,
-	 * URL and title.
+	 * The entities sharing readable items with one, an item shared only
+	 * where a live link names one of the two its subject, so an item merely
+	 * mentioning both shares nothing; each with how many it shares and the
+	 * newest it shares as citations, each its key, URL and title. They rank
+	 * by how much more the two share than their sizes predict, the items
+	 * they share over the items about either (`jaccard()`), then by how
+	 * many they share, then by key, so a partner specific to the entity
+	 * ranks above a hub every entity shares with. It reads the links on the
+	 * entity's items, and sizes only the partners those pair it with
+	 * (`partner_sizes()`), so a partner sharing nothing it counts costs
+	 * nothing.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args: `key`, `limit`.
 	 * @return array<string,mixed> `{ entities, available }`.
@@ -1317,19 +1334,23 @@ final class Graph_Query {
 		return self::answer(
 			[ 'entities' => [] ],
 			static function ( Row_Reader $r, array $g ) use ( $key, $limit ): array {
-				$survivor              = self::survivor( $key, $g );
-				$keys                  = self::keys_of( $survivor, $g );
-				[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' n WHERE entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) AND n.role IN ( ' . Intel_Graph_Row_Schema::marks( Intel_Event::ABOUT_ROLES ) . ' ) )', [ ...$keys, ...Intel_Event::ABOUT_ROLES ] );
-				$rows                  = $r->rows(
-					"{$g['with']}{$live}, mine AS ( SELECT DISTINCT item_key FROM live WHERE entity_key = ? ),"
-					. ' pairs AS ( SELECT DISTINCT live.entity_key, live.item_key, live.url, live.title, live.t FROM live JOIN mine ON mine.item_key = live.item_key WHERE live.entity_key <> ? ),'
-					. ' best AS ( SELECT entity_key, COUNT(*) AS n FROM pairs GROUP BY entity_key ORDER BY n DESC, entity_key LIMIT ? ),'
-					. ' cited AS ( SELECT p.entity_key, p.item_key, p.url, p.title, ROW_NUMBER() OVER ( PARTITION BY p.entity_key ORDER BY p.t DESC, p.item_key DESC ) AS rn FROM pairs p JOIN best ON best.entity_key = p.entity_key )'
+				$survivor                  = self::survivor( $key, $g );
+				[ $mine, $mine_binds ]     = self::linked_to( $r, self::keys_of( $survivor, $g ), Intel_Event::ABOUT_ROLES );
+				[ $judged, $judged_binds ] = self::judged( $r, $mine, $mine_binds, Intel_Event::ABOUT_ROLES );
+				[ $sizes, $sizes_binds ]   = self::partner_sizes( $r );
+				$rows                      = $r->rows(
+					"{$g['with']}{$judged}, " . self::ABOUT . ', mine AS MATERIALIZED ( SELECT item_key, subject FROM about WHERE entity_key = ? ),'
+					. ' pairs AS MATERIALIZED ( SELECT o.entity_key, o.item_key FROM mine JOIN about o ON o.item_key = mine.item_key WHERE o.entity_key <> ? AND ( mine.subject OR o.subject ) ),'
+					. " c AS MATERIALIZED ( SELECT entity_key, COUNT(*) AS n FROM pairs GROUP BY entity_key ){$sizes},"
+					. ' best AS ( SELECT c.entity_key, c.n, ' . self::jaccard( 'c.n', '( SELECT COUNT(*) FROM mine )', 'z.n' ) . ' AS score FROM c'
+					. ' JOIN sizes z ON z.entity_key = c.entity_key ORDER BY score DESC, c.n DESC, c.entity_key LIMIT ? ),'
+					. ' cited AS ( SELECT p.entity_key, p.item_key, i.url, i.title, ROW_NUMBER() OVER ( PARTITION BY p.entity_key ORDER BY ' . Intel_Graph_Row_Schema::ITEM_TIME . ' DESC, p.item_key DESC ) AS rn'
+					. ' FROM pairs p JOIN best ON best.entity_key = p.entity_key JOIN ri i ON i.item_key = p.item_key )'
 					. ' SELECT best.entity_key, ' . self::name_of( $r, 'best.entity_key' ) . ', ' . self::type_of( $r, 'best.entity_key' )
-					. ', best.n, cited.item_key, cited.url, cited.title FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.n DESC, best.entity_key, cited.rn',
-					[ ...$g['binds'], ...$live_binds, $survivor, $survivor, $limit, self::CITATIONS ]
+					. ', best.n, cited.item_key, cited.url, cited.title FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.score DESC, best.n DESC, best.entity_key, cited.rn',
+					[ ...$g['binds'], ...$judged_binds, $survivor, $survivor, ...$sizes_binds, $limit, self::CITATIONS ]
 				);
-				$entities              = [];
+				$entities                  = [];
 				foreach ( $rows as [ $entity, $name, $type, $shared, $item, $url, $title ] ) {
 					$entity              = Core::as_string( $entity );
 					$entities[ $entity ] ??= [ 'entity_key' => $entity, 'name' => $name, 'type' => $type, 'shared_items' => Core::as_int( $shared ), 'items' => [] ];
@@ -1341,17 +1362,40 @@ final class Graph_Query {
 	}
 
 	/**
+	 * The CTEs, to follow `c`, the partners a related read pairs an entity
+	 * with: `ck`, every key they stand under, and `sizes`, how many readable
+	 * items each is about by a link that is not rejected, counted off
+	 * `judged()`'s links of those keys alone, `lks`, `jts` and `ljs`, which
+	 * the links and items indexes cover (`links_entity_key`,
+	 * `items_item_tier`), so no link's row is read to count it.
+	 *
+	 * @param Row_Reader $r The reader.
+	 * @return Sql The `, ck AS …, sizes AS …` clauses and their binds.
+	 */
+	private static function partner_sizes( Row_Reader $r ): array {
+		[ $judged, $binds ] = self::judged( $r, '{t}.entity_key IN ( SELECT k FROM ck )', [], Intel_Event::ABOUT_ROLES, 's' );
+		return [
+			', ck AS MATERIALIZED ( SELECT entity_key AS k FROM c UNION SELECT key FROM mg WHERE value IN ( SELECT entity_key FROM c ) )'
+			. "{$judged}, sizes AS MATERIALIZED ( SELECT entity_key, COUNT( DISTINCT item_key ) AS n FROM ljs WHERE state <> 'rejected' GROUP BY entity_key )",
+			$binds,
+		];
+	}
+
+	/**
 	 * The whole graph: every accepted entity a readable item is about,
 	 * whether or not it shares one, and every entity one of those lists as
 	 * related, with its open roles and how many readable items are about it,
 	 * the most first and then by key; and each pair of an accepted entity and
-	 * one its `related()` list holds, RELATED_LIMIT long, as their places
-	 * among the entities and how many items they share, the most shared first
-	 * and then by key. It reads by the rules `related()` reads through; the
+	 * one its `related()` list holds, RELATED_LIMIT long and ranked as
+	 * `related()` ranks it, as their places among the entities and how many
+	 * items they share, an item shared only where one of the two is its
+	 * subject, the most shared first and then by key. It reads by the rules
+	 * `related()` reads through, each entity's size counted once; the
 	 * state is `Entity_Index`'s (`winning_states()`). One statement reads the
 	 * entities and the pairs, so a pair never names an entity it does not
 	 * answer. It windows every link the projection keeps and counts every
-	 * pair an item links, which SQLite holds; PHP holds the rows answered.
+	 * pair an item names one of as its subject, which SQLite holds; PHP
+	 * holds the rows answered.
 	 *
 	 * @return array<string,mixed> `{ entities: [ { key, name, type, roles, items } ], pairs: [ [ a, b, shared ] ], available }`.
 	 */
@@ -1362,16 +1406,18 @@ final class Graph_Query {
 				'pairs'    => [],
 			],
 			static function ( Row_Reader $r, array $g ): array {
-				[ $live, $live_binds ] = self::live( $r, '1 = 1', [] );
-				$rows                  = $r->rows(
-					"{$g['with']}{$live}, about AS MATERIALIZED ( SELECT DISTINCT item_key, entity_key FROM live ),"
-					. ' accepted AS MATERIALIZED ( SELECT DISTINCT entity_key FROM about WHERE entity_key IN ( SELECT s.entity_key FROM ' . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'accepted' ) ),"
-					. ' shares AS ( SELECT a.entity_key AS a, b.entity_key AS b, COUNT(*) AS n FROM about a JOIN about b ON b.item_key = a.item_key AND b.entity_key <> a.entity_key WHERE a.entity_key IN ( SELECT entity_key FROM accepted ) GROUP BY 1, 2 ),'
-					. ' related AS MATERIALIZED ( SELECT DISTINCT MIN( a, b ) AS a, MAX( a, b ) AS b, n FROM ( SELECT a, b, n, ROW_NUMBER() OVER ( PARTITION BY a ORDER BY n DESC, b ) AS rn FROM shares ) WHERE rn <= ? ),'
+				[ $judged, $judged_binds ] = self::judged( $r, '1 = 1', [], Intel_Event::ABOUT_ROLES );
+				$rows                      = $r->rows(
+					"{$g['with']}{$judged}, " . self::ABOUT . ', sizes AS MATERIALIZED ( SELECT entity_key, COUNT(*) AS n FROM about GROUP BY entity_key ),'
+					. ' accepted AS MATERIALIZED ( SELECT entity_key FROM sizes WHERE entity_key IN ( SELECT s.entity_key FROM ' . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'accepted' ) ),"
+					. ' shares AS ( SELECT a.entity_key AS a, b.entity_key AS b, COUNT(*) AS n FROM about a JOIN about b ON b.item_key = a.item_key AND b.entity_key <> a.entity_key'
+					. ' WHERE a.entity_key IN ( SELECT entity_key FROM accepted ) AND ( a.subject OR b.subject ) GROUP BY 1, 2 ),'
+					. ' related AS MATERIALIZED ( SELECT DISTINCT MIN( a, b ) AS a, MAX( a, b ) AS b, n FROM ( SELECT h.a, h.b, h.n, ROW_NUMBER() OVER ( PARTITION BY h.a ORDER BY ' . self::jaccard( 'h.n', 'ha.n', 'hb.n' ) . ' DESC, h.n DESC, h.b ) AS rn'
+					. ' FROM shares h JOIN sizes ha ON ha.entity_key = h.a JOIN sizes hb ON hb.entity_key = h.b ) WHERE rn <= ? ),'
 					. ' shown AS ( SELECT entity_key FROM accepted UNION SELECT a FROM related UNION SELECT b FROM related )'
-					. ' SELECT 0 AS paired, entity_key AS a, NULL AS b, COUNT(*) AS n, ' . self::name_of( $r, 'about.entity_key' ) . ', ' . self::type_of( $r, 'about.entity_key' ) . ' FROM about WHERE entity_key IN ( SELECT entity_key FROM shown ) GROUP BY entity_key'
+					. ' SELECT 0 AS paired, entity_key AS a, NULL AS b, n, ' . self::name_of( $r, 'sizes.entity_key' ) . ', ' . self::type_of( $r, 'sizes.entity_key' ) . ' FROM sizes WHERE entity_key IN ( SELECT entity_key FROM shown )'
 					. ' UNION ALL SELECT 1, a, b, n, NULL, NULL FROM related ORDER BY paired, n DESC, a, b',
-					[ ...$g['binds'], ...$live_binds, self::RELATED_LIMIT ]
+					[ ...$g['binds'], ...$judged_binds, self::RELATED_LIMIT ]
 				);
 				$entities              = [];
 				$places                = [];
@@ -1397,6 +1443,18 @@ final class Graph_Query {
 				];
 			}
 		);
+	}
+
+	/**
+	 * The SQL for how much more two entities share than their sizes predict:
+	 * the items they share over the items about either.
+	 *
+	 * @param string $shared The SQL counting the items they share.
+	 * @param string $one    The SQL counting the items about one.
+	 * @param string $other  The SQL counting the items about the other.
+	 */
+	private static function jaccard( string $shared, string $one, string $other ): string {
+		return "{$shared} * 1.0 / ( {$one} + {$other} - {$shared} )";
 	}
 
 	/**
@@ -3133,14 +3191,12 @@ final class Graph_Query {
 	/**
 	 * The CTEs, to follow the graph's prelude, that every read counts links
 	 * through, over the links of `$roles` and the judgments `$only` admits,
-	 * `{t}` naming either table: `live`, one link per item and survivor, a
-	 * topic link apart, at its effective state, on a readable item, with the
-	 * item's title, URL and time `t`. A judgment, which does not name a role,
-	 * judges an about-link; a `publisher` link keeps the machine's state. A
-	 * rejected link drops out before the pick, which takes subject over mention
-	 * over publisher, so a read of every role answers an entity's about-link
-	 * where one stands and its publisher link where a curator rejected the
-	 * rest.
+	 * `{t}` naming either table: `judged()`'s, then `live`, one link per item
+	 * and survivor, a topic link apart, at its effective state, on a readable
+	 * item, with the item's title, URL and time `t`. A rejected link drops
+	 * out before the pick, which takes subject over mention over publisher,
+	 * so a read of every role answers an entity's about-link where one
+	 * stands and its publisher link where a curator rejected the rest.
 	 *
 	 * @param Row_Reader   $r     The reader.
 	 * @param string       $only  A condition on `{t}`, the links or judgments a read rests on.
@@ -3149,20 +3205,45 @@ final class Graph_Query {
 	 * @return Sql The `, lk AS …, live AS …` clauses and their binds.
 	 */
 	private static function live( Row_Reader $r, string $only, array $binds, array $roles = Intel_Event::ABOUT_ROLES ): array {
+		[ $judged, $judged_binds ] = self::judged( $r, $only, $binds, $roles );
+		return [
+			$judged . ', live AS ( SELECT item_key, entity_key, role, method, confidence, evidence, topical, title, url, t, state FROM ( SELECT lj.*,'
+			. ' ROW_NUMBER() OVER ( PARTITION BY lj.item_key, lj.entity_key, lj.topical'
+			. " ORDER BY lj.role = 'subject' DESC, lj.role = 'publisher', lj.confidence DESC, lj.raw_key ) AS pick FROM lj WHERE lj.state <> 'rejected' ) WHERE pick = 1 )",
+			$judged_binds,
+		];
+	}
+
+	/**
+	 * The CTEs, to follow the graph's prelude, holding every link `live`
+	 * picks from, over the links of `$roles` and the judgments `$only`
+	 * admits, `{t}` naming either table, each name suffixed with `$as` so a
+	 * statement can hold two sets: `lk`, each link under its survivor; `jt`,
+	 * the highest-ranked judgment of each item and survivor; and `lj`, each
+	 * link on a readable item at its effective state, with the item's
+	 * title, URL and time `t` and `topical` for a topic link. A judgment,
+	 * which does not name a role, judges an about-link; a `publisher` link
+	 * keeps the machine's state.
+	 *
+	 * @param Row_Reader   $r     The reader.
+	 * @param string       $only  A condition on `{t}`, the links or judgments a read rests on.
+	 * @param list<scalar> $binds Its binds.
+	 * @param list<string> $roles The link roles read.
+	 * @param string       $as    The suffix the three names carry.
+	 * @return Sql The `, lk AS …, jt AS …, lj AS …` clauses and their binds.
+	 */
+	private static function judged( Row_Reader $r, string $only, array $binds, array $roles, string $as = '' ): array {
 		$rank = self::judge_rank( 'j.actor_kind' );
 		$time = Intel_Graph_Row_Schema::ITEM_TIME;
-		$sql  = ', lk AS ( SELECT l.item_key, COALESCE( mg.value, l.entity_key ) AS entity_key, l.entity_key AS raw_key, l.role, l.method, l.confidence, l.state, l.evidence'
+		$sql  = ", lk{$as} AS ( SELECT l.item_key, COALESCE( mg.value, l.entity_key ) AS entity_key, l.entity_key AS raw_key, l.role, l.method, l.confidence, l.state, l.evidence"
 			. ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' l LEFT JOIN mg ON mg.key = l.entity_key WHERE ( ' . \str_replace( '{t}', 'l', $only ) . ' ) AND l.role IN ( ' . Intel_Graph_Row_Schema::marks( $roles ) . ' ) ),'
-			. ' jt AS ( SELECT item_key, entity_key, state FROM ( SELECT j.item_key, COALESCE( mg.value, j.entity_key ) AS entity_key, j.state,'
+			. " jt{$as} AS ( SELECT item_key, entity_key, state FROM ( SELECT j.item_key, COALESCE( mg.value, j.entity_key ) AS entity_key, j.state,"
 			. " ROW_NUMBER() OVER ( PARTITION BY j.item_key, COALESCE( mg.value, j.entity_key ) ORDER BY {$rank} DESC, j.ts DESC ) AS pick"
 			. ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j LEFT JOIN mg ON mg.key = j.entity_key WHERE ' . \str_replace( '{t}', 'j', $only ) . ' ) WHERE pick = 1 ),'
-			. ' lj AS ( SELECT lk.item_key, lk.entity_key, lk.raw_key, lk.role, lk.method, lk.confidence, lk.evidence, lk.role = \'topic\' AS topical,'
-			. " i.title, i.url, {$time} AS t, CASE WHEN lk.role = ? THEN lk.state ELSE COALESCE( jt.state, lk.state ) END AS state"
-			. ' FROM lk JOIN ri i ON i.item_key = lk.item_key'
-			. " LEFT JOIN jt ON jt.item_key = lk.item_key AND jt.entity_key = lk.entity_key WHERE lk.entity_key <> '' ),"
-			. ' live AS ( SELECT item_key, entity_key, role, method, confidence, evidence, topical, title, url, t, state FROM ( SELECT lj.*,'
-			. ' ROW_NUMBER() OVER ( PARTITION BY lj.item_key, lj.entity_key, lj.topical'
-			. " ORDER BY lj.role = 'subject' DESC, lj.role = 'publisher', lj.confidence DESC, lj.raw_key ) AS pick FROM lj WHERE lj.state <> 'rejected' ) WHERE pick = 1 )";
+			. " lj{$as} AS ( SELECT k.item_key, k.entity_key, k.raw_key, k.role, k.method, k.confidence, k.evidence, k.role = 'topic' AS topical,"
+			. " i.title, i.url, {$time} AS t, CASE WHEN k.role = ? THEN k.state ELSE COALESCE( jd.state, k.state ) END AS state"
+			. " FROM lk{$as} k JOIN ri i ON i.item_key = k.item_key"
+			. " LEFT JOIN jt{$as} jd ON jd.item_key = k.item_key AND jd.entity_key = k.entity_key WHERE k.entity_key <> '' )";
 		return [ $sql, [ ...$binds, ...$roles, ...$binds, Intel_Event::PUBLISHER ] ];
 	}
 

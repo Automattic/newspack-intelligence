@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Graph tab's lines pull at the force graph's default strength,** one over the line count of the less joined end, which the substrate now applies to every line naming none; the tab no longer computes its own.
+- **Related counts an item toward two entities only when one of them is its subject.** An item that merely mentions both, such as a ticket listing dozens of sites, relates none of them to each other, so a profile's Related list, the Graph tab and the MCP `intel_related` tool join two entities only through items about one of them. `shared_items`, and each graph pair's `shared`, which the Graph tab's "Items shared, at least" slider filters by, count those items alone.
+- **Related ranks an entity's partners by how much more they share than their sizes predict:** the items two entities share over the items about either, then by how many they share, then by key. A partner specific to the entity ranks above a hub that shares items with every entity, and the Graph tab keeps each entity's 20 partners in that order. A Related read counts every item about each partner it pairs the entity with, reading those partners' links and their items' tiers off two indexes alone, so a partner sharing no counted item is not read. The Graph tab's inspector lists an entity's related entities in the same order.
+- **The intel-graph shape is version 13.** The `links_entity_key` index holds each link's role, item and state beside its entity, and a new `items_item_tier` index holds each item's tier beside its key, so a Related read sizes its partners without reading a link's or an item's row. Upgrading requires `wp newspack-intelligence ontology reproject`; until it runs, the graph stays empty.
+
 ## [0.51.0] - 2026-11-26
 
 ### Changed

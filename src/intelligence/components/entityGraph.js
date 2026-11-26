@@ -152,7 +152,6 @@ export function toEntityGraph( { entities, pairs }, { minShared } ) {
 			target,
 			weight: shared,
 			distance: DISTANCE,
-			strength: 1 / Math.min( joins.get( a ), joins.get( b ) ),
 		};
 	} );
 	return { nodes, links };
