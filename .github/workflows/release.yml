@@ -43,7 +43,7 @@ jobs:
         with:
           repository: Automattic/newspack-nodes
           # Pinned substrate commit and the tag it names; bump-version.sh rewrites it.
-          ref: 80cce6d54d5237fc92be5da28d8bf5726a422abc # v2.168.0
+          ref: 3f73fed03d6088d354a32e07a5b58ac1722c0c5d # v2.169.0
           path: .newspack-nodes
           persist-credentials: false
 

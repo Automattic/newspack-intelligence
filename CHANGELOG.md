@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-11-26
+
 ### Changed
 
 - **The Graph tab's lines pull at the force graph's default strength,** one over the line count of the less joined end, which the substrate now applies to every line naming none; the tab no longer computes its own.
