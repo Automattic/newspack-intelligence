@@ -288,7 +288,7 @@ describe( 'the graph’s paint', () => {
 				typeColors( slug, 'fill' ).forEach( ( fill, i ) => {
 					const { color, share } = mixOf( fill );
 					expect( color ).toBe( slots[ i ] );
-					expect( share ).toBe( dark ? 50 : 14 );
+					expect( share ).toBe( dark ? 50 : 35 );
 				} );
 			} );
 
@@ -306,16 +306,17 @@ describe( 'the graph’s paint', () => {
 				);
 			} );
 
-			it( 'fills each box with its type’s color and ink while names are hidden, on a dark skin', () => {
+			it( 'fills each box mostly with its type’s color while names are hidden', () => {
 				const near = typeColors( slug, 'fill' );
-				const ink = tokenOf( slug, '--ink' );
+				const under = dark
+					? tokenOf( slug, '--ink' )
+					: mixOf( near[ 0 ] ).with;
 				expect( typeColors( slug, 'fill', 'is-far' ) ).toEqual(
-					near.map( ( fill ) =>
-						dark
-							? `color-mix(in srgb, ${
-									mixOf( fill ).color
-							  } 85%, ${ ink })`
-							: fill
+					near.map(
+						( fill ) =>
+							`color-mix(in srgb, ${
+								mixOf( fill ).color
+							} 85%, ${ under })`
 					)
 				);
 			} );

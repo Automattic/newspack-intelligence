@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Graph tab draws its circles half again the shared size,** since the related entities' charge spreads the graph far wider than its circles, which the fitted view shrank to dots.
+- **A circle stands out on a light skin, the Newspack skins among them:** it is filled with 35% of its type's color, where it took 14%, and with 85% while names are hidden, as a dark skin fills it.
+
 ## [0.50.0] - 2026-11-25
 
 ### Added

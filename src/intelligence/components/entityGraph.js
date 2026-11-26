@@ -100,6 +100,9 @@ const DISTANCE = 600;
 /** What a joined entity carries, so the lines it holds do not pile names up. */
 const JOINED_CHARGE = -6000;
 
+/** How much larger than the shared size a circle draws, against that charge. */
+const CIRCLE_SCALE = 1.5;
+
 /**
  * The answer as the force graph draws it: every entity, colored by its
  * type's place in the vocabulary, a circle sized by its share of the most
@@ -130,7 +133,7 @@ export function toEntityGraph( { entities, pairs }, { minShared } ) {
 		className: `is-type-${ types.indexOf( entity.type ) + 1 }`,
 		title: titleOf( entity ),
 		charge: joins.has( place ) ? JOINED_CHARGE : undefined,
-		size: circleSize( entity.items, most ),
+		size: CIRCLE_SCALE * circleSize( entity.items, most ),
 		detail: count.format( entity.items ),
 	} ) );
 	const links = drawn.map( ( [ a, b, shared ] ) => {

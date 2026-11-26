@@ -568,7 +568,7 @@ $type-slots: 1, 2, 4, 5, 8, 7;
 		#{$graph}__node.is-type-#{list.index($type-slots, $slot)}
 			#{$graph}__shape {
 			fill: light-dark(
-				color-mix(in srgb, #{$color} 14%, #{$paper}),
+				color-mix(in srgb, #{$color} 35%, #{$paper}),
 				color-mix(in srgb, #{$color} 50%, #{$paper})
 			);
 			stroke: light-dark(
@@ -581,7 +581,7 @@ $type-slots: 1, 2, 4, 5, 8, 7;
 			#{$graph}__node.is-type-#{list.index($type-slots, $slot)}
 			#{$graph}__shape {
 			fill: light-dark(
-				color-mix(in srgb, #{$color} 14%, #{$paper}),
+				color-mix(in srgb, #{$color} 85%, #{$paper}),
 				color-mix(in srgb, #{$color} 85%, #{$ink})
 			);
 		}

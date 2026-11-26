@@ -59,13 +59,14 @@ const TYPE = Object.fromEntries(
 );
 
 /**
- * A circle's size for a share of the most items.
+ * A circle's size for a share of the most items: half again the shared size,
+ * since the graph's charge spreads it far wider than its circles.
  *
  * @param {number} items Its items.
  * @param {number} most  The most any entity drawn holds.
  * @return {number} Its size.
  */
-const sized = ( items, most ) => 10 + 20 * Math.sqrt( items / most );
+const sized = ( items, most ) => 1.5 * ( 10 + 20 * Math.sqrt( items / most ) );
 
 beforeEach( () => {
 	window.NewspackNodesData = pageData();
@@ -95,7 +96,7 @@ describe( 'toEntityGraph', () => {
 				className: TYPE.organization,
 				title: 'Harbor Ledger\nOutfit, Rival, Lapsed member, 31 items',
 				charge: -6000,
-				size: 30,
+				size: 45,
 				detail: '31',
 			},
 			{
@@ -134,13 +135,13 @@ describe( 'toEntityGraph', () => {
 			toEntityGraph( part, { minShared: 9 } ).nodes.map(
 				( { size } ) => size
 			)
-		).toEqual( [ 30, sized( 7, 31 ), sized( 1, 31 ) ] );
+		).toEqual( [ 45, sized( 7, 31 ), sized( 1, 31 ) ] );
 		const small = ofTypes( ANSWER, [ 'person', 'event' ] );
 		expect(
 			toEntityGraph( small, { minShared: 9 } ).nodes.map(
 				( { size } ) => size
 			)
-		).toEqual( [ 30, sized( 1, 12 ) ] );
+		).toEqual( [ 45, sized( 1, 12 ) ] );
 	} );
 
 	it( 'writes an item count in the page’s own language', () => {
@@ -276,7 +277,7 @@ describe( 'the shared lighting', () => {
 		expect(
 			lit.nodes.map( ( { size, detail } ) => [ size, detail ] )
 		).toEqual( [
-			[ 30, '31' ],
+			[ 45, '31' ],
 			[ sized( 12, 31 ), '12' ],
 			[ sized( 7, 31 ), '7' ],
 			[ sized( 1, 31 ), '1' ],
