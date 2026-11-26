@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.2] - 2026-11-26
+
 ### Changed
 
+- **The Graph and the debug overlay's console carry the force graph of newspack-nodes 2.169.2:** a part of the graph cut off from the rest, or a node joined to nothing, is held beside the rest rather than pushed out to the end of the charge's reach.
 - **The Graph wears the substrate's shared force-graph paint,** which pyrobase's class graph now wears too. A circle is ringed in a shade of its type's color on every skin, and filled with a 35% tint on a dark skin as on a light one, so a count holds 4.5:1 on its fill and the ring 3:1 on all sixteen skins; the light skins' rings and the dark skins' counts fell short. Needs newspack-nodes 2.169.2 to build.
 - **A rule parts the Graph's list from its canvas,** along the list's inner edge, or along its top once a narrow window stacks the two, as the class graph parts its inspector.
 - **The Graph's lines show while zoomed out.** Once the view is too far out to draw names, each line is narrower than a pixel, so its paint rises from 25% to 85% of the line color on a dark skin and from 18% to 45% on a light one, where it was too faint to see.
