@@ -179,15 +179,16 @@ const onCanvas = ( slug, part, at, longhand ) =>
  *
  * @param {string} slug       The skin.
  * @param {string} [longhand] The longhand; the stroke without one.
+ * @param {string} [view]     The view's classes, such as `is-far`.
  * @return {string[]} The values, in the vocabulary's order.
  */
-const typeColors = ( slug, longhand = 'stroke' ) =>
+const typeColors = ( slug, longhand = 'stroke', view = '' ) =>
 	graphOf( null ).nodes.map( ( { className } ) =>
 		schemed(
 			slug,
 			onCanvas(
 				slug,
-				`<g class="${ BLOCK }__node ${ className }"><rect class="${ BLOCK }__shape"></rect></g>`,
+				`<g class="${ BLOCK }__view ${ view }"><g class="${ BLOCK }__node ${ className }"><rect class="${ BLOCK }__shape"></rect></g></g>`,
 				`.${ BLOCK }__shape`,
 				longhand
 			)
@@ -299,8 +300,22 @@ describe( 'the graph’s paint', () => {
 				expect( typeColors( slug ) ).toEqual(
 					slots.map( ( color ) =>
 						dark
-							? `color-mix(in srgb, ${ color } 55%, ${ ink })`
+							? `color-mix(in srgb, ${ color } 35%, ${ ink })`
 							: color
+					)
+				);
+			} );
+
+			it( 'fills each box with its type’s color and ink while names are hidden, on a dark skin', () => {
+				const near = typeColors( slug, 'fill' );
+				const ink = tokenOf( slug, '--ink' );
+				expect( typeColors( slug, 'fill', 'is-far' ) ).toEqual(
+					near.map( ( fill ) =>
+						dark
+							? `color-mix(in srgb, ${
+									mixOf( fill ).color
+							  } 85%, ${ ink })`
+							: fill
 					)
 				);
 			} );
@@ -319,8 +334,8 @@ describe( 'the graph’s paint', () => {
 					expect( mix.with ).toBe( 'transparent' );
 					return mix.share;
 				};
-				expect( share( '' ) ).toBe( dark ? 70 : 35 );
-				expect( share( 'is-dimmed' ) ).toBe( dark ? 25 : 10 );
+				expect( share( '' ) ).toBe( dark ? 50 : 35 );
+				expect( share( 'is-dimmed' ) ).toBe( dark ? 20 : 10 );
 				expect( stroke( 'is-lit' ) ).toBe( tokenOf( slug, '--cyan' ) );
 			} );
 
@@ -362,7 +377,7 @@ describe( 'the graph’s paint', () => {
 		).toBeLessThan( 0.5 );
 		expect( node( nodes[ 5 ].className, 'opacity' ) ).toBeUndefined();
 		expect( line( links[ 0 ].className, 'stroke' ) ).toMatch(
-			/ 10%, transparent\), .* 25%, transparent\)\)$/
+			/ 10%, transparent\), .* 20%, transparent\)\)$/
 		);
 	} );
 

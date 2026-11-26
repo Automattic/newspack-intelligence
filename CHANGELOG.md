@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **On a dark skin the Graph tab paints brighter.** A line at rest shows 70% of the line ink, not 35%, and a line a selection dims 25%, not 10%; a box is filled with 50% of its type's color, not 14%, and edged in that color mixed with 45% of the ink. A light skin paints as before.
+- **On a dark skin the Graph tab paints brighter.** A line at rest shows 50% of the line ink, not 35%, and a line a selection dims 20%, not 10%. A box is filled with 50% of its type's color, not 14%, and edged in that color mixed with 65% of the ink; while the view is too far out to draw names, its fill is 85% of its type's color and 15% ink. A light skin paints as before.
 
 ### Fixed
 
